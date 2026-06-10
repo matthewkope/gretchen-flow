@@ -1,0 +1,58 @@
+[project]
+name = "gretchen-flow"
+version = "0.1.0"
+description = "Press a hotkey, speak, and your words appear wherever your cursor is. Open-source voice dictation powered by Whisper."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Matthew Kope" }]
+requires-python = ">=3.10,<3.14"
+keywords = ["dictation", "speech-to-text", "whisper", "voice", "transcription"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "faster-whisper>=1.1.0",
+    "numpy>=1.26",
+    "pynput>=1.7.7",
+    "sounddevice>=0.5.0",
+]
+
+[project.optional-dependencies]
+# Apple Silicon: noticeably faster local transcription via MLX
+mlx = ["mlx-whisper>=0.4.0"]
+
+[project.scripts]
+gf = "gretchen_flow.app:main"
+gretchen-flow = "gretchen_flow.app:main"
+
+[project.urls]
+Homepage = "https://github.com/matthewkope/gretchen-flow"
+Issues = "https://github.com/matthewkope/gretchen-flow/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gretchen_flow"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
