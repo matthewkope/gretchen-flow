@@ -6,8 +6,29 @@ on:
   pull_request:
 
 jobs:
-  test:
+  desktop:
     runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Check
+        run: cargo check
+      - name: Lint
+        run: cargo clippy -- -D warnings
+      - name: Format
+        run: cargo fmt --check
+
+  python:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: python
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

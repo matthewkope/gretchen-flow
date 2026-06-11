@@ -45,23 +45,30 @@ Python package: `pynput` (hotkeys + typing), `sounddevice` (mic),
 
 ## Decision
 
-**Option 3 now, with Option 2 as the packaging endgame.** Accuracy — the top
-requirement — is determined by the model and audio pipeline, not the app shell,
-so we iterate on that in Python where it's cheapest. The engine interface
-(`engines/base.py`) keeps transcription decoupled; if/when GF graduates to a
-packaged native app, the proven pipeline can move into a Tauri/Rust shell
-without redesign.
+**Option 2 (Tauri 2 + Rust) is the app**, in `desktop/`. The Python prototype
+(Option 3, in `python/`) validated the pipeline end-to-end in an afternoon and
+remains useful for fast model experiments, but the real product needs a menu-bar
+presence, low latency, and an installable binary — Rust territory.
 
-## Components
+## Desktop app components (`desktop/src-tauri/src/`)
 
 | Component | File | Responsibility |
 |---|---|---|
-| Hotkey listener | `hotkey.py` | Global combo detection; toggle & hold modes |
-| Recorder | `recorder.py` | 16 kHz mono float32 capture via PortAudio |
-| Engines | `engines/` | `TranscriptionEngine` ABC + faster-whisper, mlx-whisper |
-| Injector | `injector.py` | Keystroke typing or clipboard+⌘V paste |
-| Config | `config.py` | JSON config in `~/.config/gretchen-flow/` |
-| App | `app.py` | CLI, wiring, transcription off the hotkey thread |
+| App / tray | `main.rs` | Tray icon (¿ / ↓¿ / ● / …), shortcut wiring, state machine |
+| Hotkey | (tauri-plugin-global-shortcut) | Toggle & hold modes via Pressed/Released events |
+| Recorder | `audio.rs` | cpal capture on a dedicated thread; mono downmix + 16 kHz resample |
+| Engine | `transcribe.rs` | whisper-rs (whisper.cpp), Metal-accelerated, beam search |
+| Models | `model.rs` | ggml model download to `~/.cache/gretchen-flow/models/` |
+| Injector | `inject.rs` | Synthetic keystrokes via enigo |
+| Config | `config.rs` | Shared JSON config in `~/.config/gretchen-flow/` |
+
+The tray icon doubles as the recording indicator — the gap that made the
+Python prototype's toggle mode confusing (no way to tell if it was recording).
+
+## Python prototype components (`python/src/gretchen_flow/`)
+
+Mirrors the same pipeline: `hotkey.py`, `recorder.py`, `engines/`
+(faster-whisper, mlx-whisper), `injector.py`, `config.py`, `app.py`.
 
 ## Accuracy levers (in priority order)
 

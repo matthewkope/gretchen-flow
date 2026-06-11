@@ -4,84 +4,81 @@
 
 Gretchen Flow is an open-source voice dictation app in the spirit of Wispr Flow:
 a global hotkey starts recording, your speech is transcribed locally with
-[Whisper](https://github.com/openai/whisper)-family models, and the text is typed
-straight into whatever app has focus — your editor, browser, chat, anywhere.
+Whisper, and the text is typed straight into whatever app has focus — your
+editor, browser, chat, anywhere.
 
+- ¿ **Lives in the menu bar** — the icon shows state at a glance: ¿ idle, ● recording, … transcribing
 - 🎙️ **Push-to-talk or toggle** — hold a key to talk, or tap to start/stop
-- 🔒 **Local-first** — audio never leaves your machine by default
-- 🎯 **Accuracy-focused** — defaults to `large-v3-turbo`; swap models freely
-- 🔌 **Pluggable engines** — faster-whisper (cross-platform), mlx-whisper (Apple Silicon), cloud engines planned
-- 🍎 macOS first; Linux/Windows support on the roadmap
+- 🔒 **Local-first** — audio never leaves your machine
+- 🎯 **Accuracy-focused** — Whisper with Metal acceleration on Apple Silicon
+- 🦀 **Native** — Tauri 2 + Rust; small binary, low latency
 
-## Quick start
+## Repository layout
 
-Requires Python 3.10–3.13 and [uv](https://docs.astral.sh/uv/).
+| Directory | What it is |
+|---|---|
+| [`desktop/`](desktop/) | **The app** — Tauri 2 + Rust menu-bar application |
+| [`python/`](python/) | The original Python prototype (still works; great for experimenting with models) |
+| [`docs/`](docs/) | Architecture and design decisions |
+
+## Quick start (desktop app)
+
+Requires [Rust](https://rustup.rs) and cmake (`brew install cmake`).
 
 ```bash
 git clone https://github.com/matthewkope/gretchen-flow.git
-cd gretchen-flow
-uv sync                # or: uv sync --extra mlx   (Apple Silicon, faster)
-uv run gf
+cd gretchen-flow/desktop/src-tauri
+cargo run
 ```
 
-Then press **Ctrl+Option+Space**, speak, press it again, and watch the text type
-itself into the focused app. The first run downloads the model (~1.6 GB for
-large-v3-turbo); use `--model small` for a quick lightweight test.
+A **¿** appears in your menu bar. The first run downloads the Whisper model
+(~470 MB for `small`), shown as **↓¿**. When it turns back to **¿**:
 
-```bash
-uv run gf --model small                 # smaller/faster model
-uv run gf --engine mlx-whisper          # Apple Silicon native (needs --extra mlx)
-uv run gf --mode hold                   # push-to-talk: record while held
-uv run gf --hotkey "<cmd>+<shift>+d"    # custom hotkey
-uv run gf --write-config               # persist current flags as defaults
+1. Click into any text field
+2. Press **Ctrl+Option+Space** — the icon turns **●** (recording)
+3. Speak, then press it again — **…** while transcribing, then your words are typed
+
+### Configuration
+
+`~/.config/gretchen-flow/config.json`:
+
+```json
+{
+  "model": "small",
+  "language": "en",
+  "shortcut": "Ctrl+Alt+Space",
+  "hotkey_mode": "toggle"
+}
 ```
 
-Settings live in `~/.config/gretchen-flow/config.json`.
+- `model`: any ggml model from [whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)
+  — `base`, `small`, `medium`, `large-v3-turbo` (best accuracy, ~1.6 GB)
+- `hotkey_mode`: `"toggle"` or `"hold"` (push-to-talk — records while held)
+- `shortcut`: any [Tauri accelerator](https://v2.tauri.app/learn/global-shortcut/), e.g. `"Cmd+Shift+D"`
 
 ### macOS permissions
 
-GF needs two permissions for the terminal app you run it from
-(System Settings → Privacy & Security):
+System Settings → Privacy & Security — the app (or your terminal, when using
+`cargo run`) needs:
 
-1. **Microphone** — to record your voice
-2. **Accessibility** (and **Input Monitoring**) — to watch the global hotkey and
-   type the transcribed text
-
-macOS will prompt you on first run; after granting, restart GF.
-
-## How it works
-
-```
-hotkey (pynput) ──> recorder (sounddevice, 16 kHz mono)
-                          │ on stop
-                          ▼
-              transcription engine (pluggable)
-        faster-whisper / mlx-whisper / cloud (planned)
-                          │ text
-                          ▼
-            injector — keystrokes or clipboard paste
-```
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design options that were
-considered and why this architecture was chosen.
+1. **Microphone** — to hear you
+2. **Accessibility** — to type the transcribed text into other apps
 
 ## Roadmap
 
-- [ ] Menu bar / tray icon with recording indicator
+- [ ] Settings window (model picker, shortcut recorder)
 - [ ] Streaming transcription (text appears while you speak)
-- [ ] Optional cloud engines (Deepgram, OpenAI, Groq) for max accuracy/speed
-- [ ] Custom vocabulary and auto-formatting (punctuation, casing, lists)
+- [ ] Custom vocabulary and auto-formatting
+- [ ] Signed .dmg releases
 - [ ] Linux and Windows support
-- [ ] Packaged app (no Python required) — likely a Tauri shell, see ARCHITECTURE.md
 
 ## Contributing
 
-PRs welcome! Dev setup:
+PRs welcome! See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design.
 
 ```bash
-uv sync
-uv run pytest          # tests
-uv run ruff check .    # lint
+cd desktop/src-tauri && cargo build   # the app
+cd python && uv sync && uv run pytest # the prototype
 ```
 
 ## License

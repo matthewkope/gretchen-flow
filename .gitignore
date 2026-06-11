@@ -17,3 +17,7 @@ build/
 # Editors
 .idea/
 .vscode/
+
+# Rust / Tauri
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
