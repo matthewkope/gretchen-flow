@@ -118,7 +118,12 @@ fn stop_and_transcribe(app: &AppHandle) {
 
     let app = app.clone();
     std::thread::spawn(move || {
-        let samples = audio::resample_to_16k(&recording);
+        let mut samples = audio::resample_to_16k(&recording);
+        // Whisper rejects clips under 1 s — pad short ones with silence.
+        const MIN_SAMPLES: usize = 17_600; // 1.1 s at 16 kHz
+        if samples.len() < MIN_SAMPLES {
+            samples.resize(MIN_SAMPLES, 0.0);
+        }
         let state = app.state::<AppState>();
         let result = {
             let guard = state.engine.lock().unwrap();
