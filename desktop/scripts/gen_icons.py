@@ -6,6 +6,8 @@
 
 - icons/icon.png: 1024x1024 app icon — white art on a rounded dark square
 - icons/tray/idle.png: 44x44 white Gretchen on a black rounded badge
+- icons/tray/idle-light.png: black Gretchen on a white rounded badge
+  (click the tray icon to cycle between the two)
 - icons/tray/recording.png: white Gretchen on an orange-to-yellow gradient
   badge — "live" indicator
 - icons/tray/transcribing.png: amber Gretchen — busy indicator
@@ -40,8 +42,8 @@ def app_icon(art: Image.Image) -> Image.Image:
     return icon
 
 
-def badge_icon(art: Image.Image, top, bottom, boost: float = 1.6) -> Image.Image:
-    """White art in the foreground, vertical-gradient rounded badge behind
+def badge_icon(art: Image.Image, top, bottom, fg=(255, 255, 255), boost: float = 1.6) -> Image.Image:
+    """Line art in the foreground, vertical-gradient rounded badge behind
     (pass top == bottom for a solid color)."""
     size = TRAY_SIZE
     gradient = Image.new("RGBA", (size, size))
@@ -58,8 +60,8 @@ def badge_icon(art: Image.Image, top, bottom, boost: float = 1.6) -> Image.Image
 
     art_mask = luminance_mask(art).resize((size, size), Image.LANCZOS)
     art_mask = art_mask.point(lambda v: min(255, int(v * boost)))
-    white = Image.new("RGBA", (size, size), (255, 255, 255, 255))
-    img.paste(white, (0, 0), art_mask)
+    fill = Image.new("RGBA", (size, size), fg + (255,))
+    img.paste(fill, (0, 0), art_mask)
     return img
 
 
@@ -84,7 +86,9 @@ def main() -> None:
 
     app_icon(art).save(ICONS / "icon.png")
     black = (0, 0, 0)
+    white = (245, 245, 247)
     badge_icon(art, black, black).save(TRAY / "idle.png")
+    badge_icon(art, white, white, fg=(0, 0, 0)).save(TRAY / "idle-light.png")
     badge_icon(art, (255, 140, 0), (255, 214, 10)).save(TRAY / "recording.png")
     tray_icon(art, (255, 159, 10, 255)).save(TRAY / "transcribing.png")
     print(f"wrote icon.png and 3 tray icons under {ICONS}")

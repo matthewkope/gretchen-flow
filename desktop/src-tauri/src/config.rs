@@ -27,6 +27,9 @@ pub struct Config {
     /// Personal dictionary: names and jargon to bias recognition toward,
     /// e.g. ["Gretchen Flow", "Tauri", "Kope"].
     pub vocabulary: Vec<String>,
+    /// Idle tray badge: "dark" (white art on black) or "light" (black on
+    /// white). Clicking the tray icon toggles and saves this.
+    pub icon_theme: String,
     /// Keep unknown keys (e.g. the Python app's settings) intact on save.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -44,6 +47,7 @@ impl Default for Config {
             remove_fillers: true,
             auto_lists: true,
             vocabulary: vec!["Gretchen Flow".into()],
+            icon_theme: "dark".into(),
             extra: serde_json::Map::new(),
         }
     }
@@ -62,5 +66,15 @@ impl Config {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
+    }
+
+    pub fn save(&self) {
+        let path = config_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::write(path, json + "\n");
+        }
     }
 }
