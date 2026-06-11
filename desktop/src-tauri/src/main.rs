@@ -213,26 +213,56 @@ fn set_hotkey(app: &AppHandle, accel: &str) -> Result<(), String> {
 }
 
 /// Watch the Fn/Globe key globally (it can't be a registered shortcut).
-/// Always running; only acts while `fn_hotkey` is set.
+/// A minimal CGEventTap on flagsChanged events only — no keyboard-layout
+/// lookups, so it's safe off the main thread. Always running; only acts
+/// while `fn_hotkey` is set.
 fn spawn_fn_listener(app: AppHandle) {
+    use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
+    use core_graphics::event::{
+        CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
+        CGEventType,
+    };
+    use std::cell::Cell;
+
     std::thread::spawn(move || {
-        let result = rdev::listen(move |event| {
-            if !app.state::<AppState>().fn_hotkey.load(Ordering::SeqCst) {
-                return;
-            }
-            match event.event_type {
-                rdev::EventType::KeyPress(rdev::Key::Function) => {
-                    on_shortcut(&app, ShortcutState::Pressed);
+        let fn_was_down = Cell::new(false);
+        let tap = CGEventTap::new(
+            CGEventTapLocation::Session,
+            CGEventTapPlacement::HeadInsertEventTap,
+            CGEventTapOptions::ListenOnly,
+            vec![CGEventType::FlagsChanged],
+            move |_proxy, _etype, event| {
+                let down = event
+                    .get_flags()
+                    .contains(CGEventFlags::CGEventFlagSecondaryFn);
+                if down != fn_was_down.get() {
+                    fn_was_down.set(down);
+                    if app.state::<AppState>().fn_hotkey.load(Ordering::SeqCst) {
+                        let shortcut_state = if down {
+                            ShortcutState::Pressed
+                        } else {
+                            ShortcutState::Released
+                        };
+                        on_shortcut(&app, shortcut_state);
+                    }
                 }
-                rdev::EventType::KeyRelease(rdev::Key::Function) => {
-                    on_shortcut(&app, ShortcutState::Released);
-                }
-                _ => {}
-            }
-        });
-        if let Err(e) = result {
-            log::error!("Fn key listener failed: {e:?}");
+                None
+            },
+        );
+        let Ok(tap) = tap else {
+            log::error!("couldn't create Fn event tap (check Input Monitoring permission)");
+            return;
+        };
+        let Ok(source) = tap.mach_port.create_runloop_source(0) else {
+            log::error!("couldn't create run loop source for the Fn tap");
+            return;
+        };
+        let run_loop = CFRunLoop::get_current();
+        unsafe {
+            run_loop.add_source(&source, kCFRunLoopCommonModes);
         }
+        tap.enable();
+        CFRunLoop::run_current();
     });
 }
 
