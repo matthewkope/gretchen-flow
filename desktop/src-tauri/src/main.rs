@@ -46,10 +46,16 @@ struct AppState {
     icon_dark: AtomicBool,
     /// The currently registered global shortcut (changeable from the menu).
     current_shortcut: Mutex<String>,
+    /// True while the Fn/Globe key is the active hotkey.
+    fn_hotkey: AtomicBool,
     cfg: config::Config,
     /// Full texts behind the tray's "Recent" items, newest first.
     history_items: Mutex<Vec<String>>,
 }
+
+/// Special hotkey value: the Fn/Globe key, watched by a low-level listener
+/// because macOS can't register it as a normal shortcut.
+const FN_HOTKEY: &str = "Fn";
 
 /// Hotkey choices offered in the tray menu: (accelerator, display label).
 const HOTKEY_CHOICES: &[(&str, &str)] = &[
@@ -58,6 +64,7 @@ const HOTKEY_CHOICES: &[(&str, &str)] = &[
     ("Ctrl+Alt+D", "Control + Option + D"),
     ("Cmd+Alt+G", "Command + Option + G"),
     ("F6", "F6"),
+    ("Fn", "Fn  (🌐 Globe key)"),
 ];
 
 fn set_tray_state(app: &AppHandle, state: TrayState) {
@@ -153,34 +160,49 @@ fn toggle_icon_theme(app: &AppHandle) {
 }
 
 /// Switch the global hotkey, persist it, and update the menu. On failure the
-/// previous hotkey stays registered.
+/// previous hotkey stays registered. The special value "Fn" switches to the
+/// low-level Fn/Globe listener instead of a registered shortcut.
 fn set_hotkey(app: &AppHandle, accel: &str) -> Result<(), String> {
-    let new_shortcut: Shortcut = accel
-        .parse()
-        .map_err(|e| format!("\"{accel}\" isn't a usable shortcut: {e}"))?;
     let state = app.state::<AppState>();
     let old = state.current_shortcut.lock().unwrap().clone();
     if old == accel {
         return Ok(());
     }
-    if let Ok(old_shortcut) = old.parse::<Shortcut>() {
-        let _ = app.global_shortcut().unregister(old_shortcut);
-    }
-    if let Err(e) = app
-        .global_shortcut()
-        .on_shortcut(new_shortcut, |app, _sc, event| {
-            on_shortcut(app, event.state())
-        })
-    {
+
+    if accel == FN_HOTKEY {
         if let Ok(old_shortcut) = old.parse::<Shortcut>() {
-            let _ = app
-                .global_shortcut()
-                .on_shortcut(old_shortcut, |app, _sc, event| {
-                    on_shortcut(app, event.state())
-                });
+            let _ = app.global_shortcut().unregister(old_shortcut);
         }
-        return Err(format!("couldn't register \"{accel}\": {e}"));
+        state.fn_hotkey.store(true, Ordering::SeqCst);
+    } else {
+        let new_shortcut: Shortcut = accel
+            .parse()
+            .map_err(|e| format!("\"{accel}\" isn't a usable shortcut: {e}"))?;
+        if old == FN_HOTKEY {
+            state.fn_hotkey.store(false, Ordering::SeqCst);
+        } else if let Ok(old_shortcut) = old.parse::<Shortcut>() {
+            let _ = app.global_shortcut().unregister(old_shortcut);
+        }
+        if let Err(e) = app
+            .global_shortcut()
+            .on_shortcut(new_shortcut, |app, _sc, event| {
+                on_shortcut(app, event.state())
+            })
+        {
+            // Restore whatever was active before.
+            if old == FN_HOTKEY {
+                state.fn_hotkey.store(true, Ordering::SeqCst);
+            } else if let Ok(old_shortcut) = old.parse::<Shortcut>() {
+                let _ = app
+                    .global_shortcut()
+                    .on_shortcut(old_shortcut, |app, _sc, event| {
+                        on_shortcut(app, event.state())
+                    });
+            }
+            return Err(format!("couldn't register \"{accel}\": {e}"));
+        }
     }
+
     *state.current_shortcut.lock().unwrap() = accel.to_string();
     let mut cfg = config::Config::load();
     cfg.shortcut = accel.to_string();
@@ -188,6 +210,30 @@ fn set_hotkey(app: &AppHandle, accel: &str) -> Result<(), String> {
     log::info!("hotkey set to {accel}");
     refresh_menu(app);
     Ok(())
+}
+
+/// Watch the Fn/Globe key globally (it can't be a registered shortcut).
+/// Always running; only acts while `fn_hotkey` is set.
+fn spawn_fn_listener(app: AppHandle) {
+    std::thread::spawn(move || {
+        let result = rdev::listen(move |event| {
+            if !app.state::<AppState>().fn_hotkey.load(Ordering::SeqCst) {
+                return;
+            }
+            match event.event_type {
+                rdev::EventType::KeyPress(rdev::Key::Function) => {
+                    on_shortcut(&app, ShortcutState::Pressed);
+                }
+                rdev::EventType::KeyRelease(rdev::Key::Function) => {
+                    on_shortcut(&app, ShortcutState::Released);
+                }
+                _ => {}
+            }
+        });
+        if let Err(e) = result {
+            log::error!("Fn key listener failed: {e:?}");
+        }
+    });
 }
 
 /// Open (or focus) the small "press your shortcut" recorder window.
@@ -438,10 +484,16 @@ fn main() {
         cfg.hotkey_mode
     );
 
-    let shortcut: Shortcut = cfg
-        .shortcut
-        .parse()
-        .expect("invalid shortcut in config.json");
+    // "Fn" is handled by the low-level listener, not a registered shortcut.
+    let shortcut: Option<Shortcut> = if cfg.shortcut == FN_HOTKEY {
+        None
+    } else {
+        Some(
+            cfg.shortcut
+                .parse()
+                .expect("invalid shortcut in config.json"),
+        )
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -455,6 +507,7 @@ fn main() {
             recording: AtomicBool::new(false),
             icon_dark: AtomicBool::new(cfg.icon_theme != "light"),
             current_shortcut: Mutex::new(cfg.shortcut.clone()),
+            fn_hotkey: AtomicBool::new(cfg.shortcut == FN_HOTKEY),
             cfg,
             history_items: Mutex::new(Vec::new()),
         })
@@ -475,8 +528,11 @@ fn main() {
                 .build(app)?;
             refresh_menu(app.handle());
 
-            app.global_shortcut()
-                .on_shortcut(shortcut, |app, _sc, event| on_shortcut(app, event.state()))?;
+            if let Some(shortcut) = shortcut {
+                app.global_shortcut()
+                    .on_shortcut(shortcut, |app, _sc, event| on_shortcut(app, event.state()))?;
+            }
+            spawn_fn_listener(app.handle().clone());
 
             load_engine_async(app.handle().clone());
             Ok(())
