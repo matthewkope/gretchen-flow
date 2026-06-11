@@ -101,14 +101,16 @@ fn build_text(tokens: &[Token], pause_ms: i64, english: bool) -> String {
             let gap_ms = (tok.t0 - prev_end) * 10;
             if gap_ms >= pause_ms {
                 let trimmed = out.trim_end();
-                if !trimmed.is_empty() && !trimmed.ends_with(['.', '!', '?', ',', ':', ';', '—'])
-                {
+                if trimmed.ends_with([',', ':', ';']) {
+                    // The model heard a clause break, but the speaker paused
+                    // like it's a sentence break — the pause wins.
+                    out.truncate(trimmed.len() - 1);
+                    out.push('.');
+                    capitalize = true;
+                } else if !trimmed.is_empty() && !trimmed.ends_with(['.', '!', '?', '—']) {
                     out.truncate(trimmed.len());
                     out.push('.');
                     capitalize = true;
-                } else if trimmed.ends_with([',', ':', ';']) {
-                    // A pause after a comma still starts a new clause, not a
-                    // new sentence — leave it as the model wrote it.
                 }
             }
         }
@@ -196,11 +198,35 @@ mod tests {
     }
 
     #[test]
-    fn existing_punctuation_is_kept() {
+    fn sentence_punctuation_is_kept_at_pause() {
+        let tokens = [
+            tok(" really", 0, 50),
+            tok("?", 50, 51),
+            tok(" yes", 200, 250),
+        ];
+        assert_eq!(build_text(&tokens, 700, true), "Really? Yes.");
+    }
+
+    #[test]
+    fn pause_upgrades_comma_to_period() {
+        let tokens = [
+            tok(" sentence", 0, 50),
+            tok(" one,", 50, 100),
+            tok(" sentence", 250, 300),
+            tok(" two", 300, 350),
+        ];
+        assert_eq!(
+            build_text(&tokens, 700, true),
+            "Sentence one. Sentence two."
+        );
+    }
+
+    #[test]
+    fn comma_without_pause_is_kept() {
         let tokens = [
             tok(" great,", 0, 50),
-            tok(" right", 200, 250),
-            tok("?", 250, 251),
+            tok(" right", 80, 130),
+            tok("?", 130, 131),
         ];
         assert_eq!(build_text(&tokens, 700, true), "Great, right?");
     }
