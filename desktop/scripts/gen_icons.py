@@ -7,7 +7,8 @@
 - icons/icon.png: 1024x1024 app icon — white art on a rounded dark square
 - icons/tray/idle.png: 44x44 template image (black + alpha from the art's
   luminance; macOS recolors it for light/dark menu bars)
-- icons/tray/recording.png: red Gretchen with a glow — "live" indicator
+- icons/tray/recording.png: white Gretchen on an orange-to-yellow gradient
+  badge — "live" indicator
 - icons/tray/transcribing.png: amber Gretchen — busy indicator
 
 Run: uv run desktop/scripts/gen_icons.py
@@ -40,6 +41,29 @@ def app_icon(art: Image.Image) -> Image.Image:
     return icon
 
 
+def recording_icon(art: Image.Image, boost: float = 1.6) -> Image.Image:
+    """White art in the foreground, orange-to-yellow gradient badge behind."""
+    size = TRAY_SIZE
+    top, bottom = (255, 140, 0), (255, 214, 10)  # orange -> yellow
+    gradient = Image.new("RGBA", (size, size))
+    for y in range(size):
+        t = y / (size - 1)
+        row = tuple(int(top[c] + (bottom[c] - top[c]) * t) for c in range(3)) + (255,)
+        for x in range(size):
+            gradient.putpixel((x, y), row)
+    badge_mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(badge_mask).rounded_rectangle([1, 1, size - 2, size - 2], radius=10, fill=255)
+
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    img.paste(gradient, (0, 0), badge_mask)
+
+    art_mask = luminance_mask(art).resize((size, size), Image.LANCZOS)
+    art_mask = art_mask.point(lambda v: min(255, int(v * boost)))
+    white = Image.new("RGBA", (size, size), (255, 255, 255, 255))
+    img.paste(white, (0, 0), art_mask)
+    return img
+
+
 def tray_icon(art: Image.Image, color, glow=None, boost: float = 1.6) -> Image.Image:
     mask = luminance_mask(art).resize((TRAY_SIZE, TRAY_SIZE), Image.LANCZOS)
     # Boost so fine lines survive the heavy downscale.
@@ -61,7 +85,7 @@ def main() -> None:
 
     app_icon(art).save(ICONS / "icon.png")
     tray_icon(art, (0, 0, 0, 255)).save(TRAY / "idle.png")
-    tray_icon(art, (255, 59, 48, 255), glow=(255, 59, 48, 190)).save(TRAY / "recording.png")
+    recording_icon(art).save(TRAY / "recording.png")
     tray_icon(art, (255, 159, 10, 255)).save(TRAY / "transcribing.png")
     print(f"wrote icon.png and 3 tray icons under {ICONS}")
 
