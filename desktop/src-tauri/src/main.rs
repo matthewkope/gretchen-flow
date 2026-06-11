@@ -8,6 +8,7 @@
 
 mod audio;
 mod config;
+mod history;
 mod inject;
 mod model;
 mod transcribe;
@@ -40,6 +41,8 @@ struct AppState {
     engine: Arc<Mutex<Option<transcribe::Engine>>>,
     recording: AtomicBool,
     cfg: config::Config,
+    /// Full texts behind the tray's "Recent" items, newest first.
+    history_items: Mutex<Vec<String>>,
 }
 
 fn set_tray_state(app: &AppHandle, state: TrayState) {
@@ -100,6 +103,8 @@ fn stop_and_transcribe(app: &AppHandle) {
                 if let Err(e) = inject::type_text(&text) {
                     log::error!("{e}");
                 }
+                history::append(&text);
+                refresh_menu(&app);
             }
             Ok(_) => log::info!("no speech detected"),
             Err(e) => log::error!("transcription failed: {e}"),
@@ -133,18 +138,103 @@ fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
     }
 }
 
+const HISTORY_MENU_ITEMS: usize = 5;
+
+/// Rebuild the tray menu, including the latest history entries.
+fn refresh_menu(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let recent = history::recent(HISTORY_MENU_ITEMS);
+    let status_label = format!(
+        "Gretchen Flow — {} ({})",
+        state.cfg.shortcut, state.cfg.hotkey_mode
+    );
+    let result = (|| -> tauri::Result<()> {
+        let menu = Menu::new(app)?;
+        menu.append(&MenuItem::with_id(
+            app,
+            "status",
+            &status_label,
+            false,
+            None::<&str>,
+        )?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+        if !recent.is_empty() {
+            menu.append(&MenuItem::with_id(
+                app,
+                "hist-header",
+                "Recent — click to type again",
+                false,
+                None::<&str>,
+            )?)?;
+            for (i, text) in recent.iter().enumerate() {
+                let label: String = if text.chars().count() > 45 {
+                    format!("{}…", text.chars().take(45).collect::<String>())
+                } else {
+                    text.clone()
+                };
+                menu.append(&MenuItem::with_id(
+                    app,
+                    format!("hist-{i}"),
+                    label,
+                    true,
+                    None::<&str>,
+                )?)?;
+            }
+            menu.append(&PredefinedMenuItem::separator(app)?)?;
+        }
+        menu.append(&MenuItem::with_id(
+            app,
+            "quit",
+            "Quit Gretchen Flow",
+            true,
+            None::<&str>,
+        )?)?;
+        if let Some(tray) = app.tray_by_id(TRAY_ID) {
+            tray.set_menu(Some(menu))?;
+        }
+        Ok(())
+    })();
+    if let Err(e) = result {
+        log::error!("menu refresh failed: {e}");
+    }
+    *state.history_items.lock().unwrap() = recent;
+}
+
+fn on_menu_event(app: &AppHandle, id: &str) {
+    if id == "quit" {
+        app.exit(0);
+        return;
+    }
+    let Some(idx) = id
+        .strip_prefix("hist-")
+        .and_then(|s| s.parse::<usize>().ok())
+    else {
+        return;
+    };
+    let text = {
+        let state = app.state::<AppState>();
+        let items = state.history_items.lock().unwrap();
+        items.get(idx).cloned()
+    };
+    if let Some(text) = text {
+        std::thread::spawn(move || {
+            // Give the menu a beat to close and focus to return to the app
+            // the user was in.
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            if let Err(e) = inject::type_text(&text) {
+                log::error!("{e}");
+            }
+        });
+    }
+}
+
 fn load_engine_async(app: AppHandle) {
     std::thread::spawn(move || {
         set_tray_state(&app, TrayState::Downloading);
         let state = app.state::<AppState>();
         let cfg = state.cfg.clone();
-        let loaded = model::ensure_model(&cfg.model).and_then(|path| {
-            transcribe::Engine::load(
-                &path.to_string_lossy(),
-                &cfg.language,
-                cfg.pause_punctuation_ms as i64,
-            )
-        });
+        let loaded = model::ensure_model(&cfg.model)
+            .and_then(|path| transcribe::Engine::load(&path.to_string_lossy(), &cfg));
         match loaded {
             Ok(engine) => {
                 *state.engine.lock().unwrap() = Some(engine);
@@ -181,31 +271,19 @@ fn main() {
             engine: Arc::new(Mutex::new(None)),
             recording: AtomicBool::new(false),
             cfg,
+            history_items: Mutex::new(Vec::new()),
         })
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let state = app.state::<AppState>();
-            let status_label = format!(
-                "Gretchen Flow — {} ({})",
-                state.cfg.shortcut, state.cfg.hotkey_mode
-            );
-            let status = MenuItem::with_id(app, "status", status_label, false, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit Gretchen Flow", true, None::<&str>)?;
-            let menu =
-                Menu::with_items(app, &[&status, &PredefinedMenuItem::separator(app)?, &quit])?;
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(Image::from_bytes(ICON_IDLE)?)
                 .icon_as_template(true)
                 .title("↓")
-                .menu(&menu)
-                .on_menu_event(|app, event| {
-                    if event.id() == "quit" {
-                        app.exit(0);
-                    }
-                })
+                .on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()))
                 .build(app)?;
+            refresh_menu(app.handle());
 
             app.global_shortcut()
                 .on_shortcut(shortcut, |app, _sc, event| on_shortcut(app, event.state()))?;

@@ -19,6 +19,11 @@ pub struct Config {
     /// Insert a period when the speaker pauses at least this long (ms).
     /// 0 disables pause punctuation.
     pub pause_punctuation_ms: u64,
+    /// Strip filler words ("um", "uh", ...) from transcriptions.
+    pub remove_fillers: bool,
+    /// Personal dictionary: names and jargon to bias recognition toward,
+    /// e.g. ["Gretchen Flow", "Tauri", "Kope"].
+    pub vocabulary: Vec<String>,
     /// Keep unknown keys (e.g. the Python app's settings) intact on save.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -27,11 +32,14 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            model: "small".into(),
+            // Quantized large-v3-turbo: near-flagship accuracy at ~574 MB.
+            model: "large-v3-turbo-q5_0".into(),
             language: "en".into(),
             shortcut: "Ctrl+Alt+Space".into(),
             hotkey_mode: "hold".into(),
             pause_punctuation_ms: 700,
+            remove_fillers: true,
+            vocabulary: vec!["Gretchen Flow".into()],
             extra: serde_json::Map::new(),
         }
     }

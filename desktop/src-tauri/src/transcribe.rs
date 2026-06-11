@@ -6,10 +6,16 @@
 
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
+use crate::config::Config;
+
 pub struct Engine {
     ctx: WhisperContext,
     language: Option<String>,
     pause_ms: i64,
+    remove_fillers: bool,
+    /// Personal-dictionary prompt: priming Whisper with the user's terms
+    /// biases recognition toward them (and toward punctuated output).
+    prompt: Option<String>,
 }
 
 struct Token {
@@ -20,17 +26,24 @@ struct Token {
 }
 
 impl Engine {
-    pub fn load(model_path: &str, language: &str, pause_ms: i64) -> Result<Self, String> {
+    pub fn load(model_path: &str, cfg: &Config) -> Result<Self, String> {
         let ctx = WhisperContext::new_with_params(model_path, WhisperContextParameters::default())
             .map_err(|e| format!("failed to load model: {e}"))?;
-        let language = match language {
+        let language = match cfg.language.as_str() {
             "auto" | "" => None,
             l => Some(l.to_string()),
+        };
+        let prompt = if cfg.vocabulary.is_empty() {
+            None
+        } else {
+            Some(format!("Glossary: {}.", cfg.vocabulary.join(", ")))
         };
         Ok(Self {
             ctx,
             language,
-            pause_ms,
+            pause_ms: cfg.pause_punctuation_ms as i64,
+            remove_fillers: cfg.remove_fillers,
+            prompt,
         })
     }
 
@@ -48,10 +61,14 @@ impl Engine {
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
         params.set_token_timestamps(self.pause_ms > 0);
+        if let Some(prompt) = &self.prompt {
+            params.set_initial_prompt(prompt);
+        }
 
         state.full(params, samples).map_err(|e| e.to_string())?;
 
         let n = state.full_n_segments().map_err(|e| e.to_string())?;
+        let english = self.language.as_deref() == Some("en");
 
         if self.pause_ms == 0 {
             let mut text = String::new();
@@ -60,7 +77,7 @@ impl Engine {
                 text.push_str(seg.trim());
                 text.push(' ');
             }
-            return Ok(text.trim().to_string());
+            return Ok(post_process(&text, english, self.remove_fillers));
         }
 
         let mut tokens = Vec::new();
@@ -85,13 +102,17 @@ impl Engine {
             }
         }
 
-        let english = self.language.as_deref() == Some("en");
-        Ok(build_text(&tokens, self.pause_ms, english))
+        Ok(build_text(
+            &tokens,
+            self.pause_ms,
+            english,
+            self.remove_fillers,
+        ))
     }
 }
 
 /// Join tokens into text, turning speech pauses into sentence breaks.
-fn build_text(tokens: &[Token], pause_ms: i64, english: bool) -> String {
+fn build_text(tokens: &[Token], pause_ms: i64, english: bool, fillers: bool) -> String {
     let mut out = String::new();
     let mut last_t1: Option<i64> = None;
     let mut capitalize = true;
@@ -126,7 +147,15 @@ fn build_text(tokens: &[Token], pause_ms: i64, english: bool) -> String {
         }
     }
 
-    let mut result = out.trim().to_string();
+    post_process(&out, english, fillers)
+}
+
+/// Shared cleanup: filler removal, English "i" fix, terminal punctuation.
+fn post_process(text: &str, english: bool, fillers: bool) -> String {
+    let mut result = text.trim().to_string();
+    if fillers {
+        result = remove_filler_words(&result);
+    }
     if english {
         result = fix_standalone_i(&result);
     }
@@ -134,6 +163,48 @@ fn build_text(tokens: &[Token], pause_ms: i64, english: bool) -> String {
         result.push('.');
     }
     result
+}
+
+const FILLERS: &[&str] = &[
+    "um", "uh", "er", "erm", "uhm", "umm", "uhh", "hmm", "mhm", "mmm",
+];
+
+/// Drop filler words, keeping sentence structure intact: punctuation a filler
+/// carried moves to the previous word, and a filler that opened a sentence
+/// passes its capital letter to the next word.
+fn remove_filler_words(text: &str) -> String {
+    let mut words: Vec<String> = Vec::new();
+    let mut capitalize = false;
+
+    for raw in text.split_whitespace() {
+        let core: String = raw
+            .chars()
+            .filter(|c| c.is_alphabetic())
+            .collect::<String>()
+            .to_lowercase();
+        if FILLERS.contains(&core.as_str()) {
+            if words.last().is_none_or(|w| w.ends_with(['.', '!', '?'])) {
+                capitalize = true;
+            }
+            // "...word um." -> "...word."
+            if let Some(p) = raw.chars().last().filter(|c| ['.', '!', '?'].contains(c)) {
+                if let Some(last) = words.last_mut() {
+                    if !last.ends_with(['.', '!', '?', ',']) {
+                        last.push(p);
+                    }
+                }
+            }
+            continue;
+        }
+        if capitalize {
+            let mut flag = true;
+            words.push(capitalize_first_alpha(raw, &mut flag));
+            capitalize = flag;
+        } else {
+            words.push(raw.to_string());
+        }
+    }
+    words.join(" ")
 }
 
 /// Uppercase the first alphabetic character; clear the flag once one is found.
@@ -188,13 +259,16 @@ mod tests {
             tok(" this", 200, 250),
             tok(" works", 250, 300),
         ];
-        assert_eq!(build_text(&tokens, 700, true), "Hello world. This works.");
+        assert_eq!(
+            build_text(&tokens, 700, true, false),
+            "Hello world. This works."
+        );
     }
 
     #[test]
     fn short_gap_does_not_break_sentence() {
         let tokens = [tok(" hello", 0, 50), tok(" world", 80, 130)];
-        assert_eq!(build_text(&tokens, 700, true), "Hello world.");
+        assert_eq!(build_text(&tokens, 700, true, false), "Hello world.");
     }
 
     #[test]
@@ -204,7 +278,7 @@ mod tests {
             tok("?", 50, 51),
             tok(" yes", 200, 250),
         ];
-        assert_eq!(build_text(&tokens, 700, true), "Really? Yes.");
+        assert_eq!(build_text(&tokens, 700, true, false), "Really? Yes.");
     }
 
     #[test]
@@ -216,7 +290,7 @@ mod tests {
             tok(" two", 300, 350),
         ];
         assert_eq!(
-            build_text(&tokens, 700, true),
+            build_text(&tokens, 700, true, false),
             "Sentence one. Sentence two."
         );
     }
@@ -228,7 +302,7 @@ mod tests {
             tok(" right", 80, 130),
             tok("?", 130, 131),
         ];
-        assert_eq!(build_text(&tokens, 700, true), "Great, right?");
+        assert_eq!(build_text(&tokens, 700, true, false), "Great, right?");
     }
 
     #[test]
@@ -239,7 +313,35 @@ mod tests {
             tok(" i'm", 40, 70),
             tok(" right", 70, 100),
         ];
-        assert_eq!(build_text(&tokens, 700, true), "I think I'm right.");
+        assert_eq!(build_text(&tokens, 700, true, false), "I think I'm right.");
+    }
+
+    #[test]
+    fn fillers_are_removed() {
+        assert_eq!(
+            remove_filler_words("Um, hello there. I think, uh, this works."),
+            "Hello there. I think, this works."
+        );
+        assert_eq!(remove_filler_words("so um yeah"), "so yeah");
+        assert_eq!(remove_filler_words("It works um."), "It works.");
+    }
+
+    #[test]
+    fn filler_lookalikes_are_kept() {
+        assert_eq!(
+            remove_filler_words("the umbrella and the error"),
+            "the umbrella and the error"
+        );
+    }
+
+    #[test]
+    fn fillers_stripped_in_pipeline() {
+        let tokens = [
+            tok(" um", 0, 10),
+            tok(" hello", 10, 40),
+            tok(" world", 40, 70),
+        ];
+        assert_eq!(build_text(&tokens, 700, true, true), "Hello world.");
     }
 
     #[test]
@@ -253,6 +355,6 @@ mod tests {
         // build_text is only called when pause_ms > 0; still, a huge threshold
         // means no inserted periods.
         let tokens = [tok(" a", 0, 10), tok(" b", 500, 510)];
-        assert_eq!(build_text(&tokens, 100_000, true), "A b.");
+        assert_eq!(build_text(&tokens, 100_000, true, false), "A b.");
     }
 }
