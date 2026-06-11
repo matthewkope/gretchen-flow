@@ -77,7 +77,9 @@ When the arrow disappears:
   — `large-v3-turbo-q5_0` (default: near-flagship accuracy, ~574 MB),
   `large-v3-turbo` (~1.6 GB), `small` (~466 MB, fast/lighter), `base` (~142 MB)
 - `hotkey_mode`: `"hold"` (push-to-talk — records while held, default) or `"toggle"` (tap to start/stop)
-- `shortcut`: any [Tauri accelerator](https://v2.tauri.app/learn/global-shortcut/), e.g. `"Cmd+Shift+D"`
+- `shortcut`: any [Tauri accelerator](https://v2.tauri.app/learn/global-shortcut/), e.g. `"Cmd+Shift+D"` —
+  or just pick one from the tray menu's **Hotkey** submenu (takes effect
+  immediately and is saved here)
 - `pause_punctuation_ms`: pausing this long while speaking inserts a period and
   capitalizes the next sentence (smaller models often skip punctuation; this
   recovers it from your speech rhythm). Set `0` to disable.

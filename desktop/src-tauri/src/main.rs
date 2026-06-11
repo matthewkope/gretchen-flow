@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -44,10 +44,21 @@ struct AppState {
     recording: AtomicBool,
     /// Idle badge theme: true = dark (white art on black), false = light.
     icon_dark: AtomicBool,
+    /// The currently registered global shortcut (changeable from the menu).
+    current_shortcut: Mutex<String>,
     cfg: config::Config,
     /// Full texts behind the tray's "Recent" items, newest first.
     history_items: Mutex<Vec<String>>,
 }
+
+/// Hotkey choices offered in the tray menu: (accelerator, display label).
+const HOTKEY_CHOICES: &[(&str, &str)] = &[
+    ("Ctrl+Alt+Space", "Control + Option + Space"),
+    ("Cmd+Shift+Space", "Command + Shift + Space"),
+    ("Ctrl+Alt+D", "Control + Option + D"),
+    ("Cmd+Alt+G", "Command + Option + G"),
+    ("F6", "F6"),
+];
 
 fn set_tray_state(app: &AppHandle, state: TrayState) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
@@ -141,6 +152,47 @@ fn toggle_icon_theme(app: &AppHandle) {
     refresh_menu(app);
 }
 
+/// Menu action: switch the global hotkey, persist it, and update the menu.
+fn set_hotkey(app: &AppHandle, accel: &str) {
+    let new_shortcut: Shortcut = match accel.parse() {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("invalid shortcut {accel}: {e}");
+            return;
+        }
+    };
+    let state = app.state::<AppState>();
+    let old = state.current_shortcut.lock().unwrap().clone();
+    if old == accel {
+        return;
+    }
+    if let Ok(old_shortcut) = old.parse::<Shortcut>() {
+        let _ = app.global_shortcut().unregister(old_shortcut);
+    }
+    if let Err(e) = app
+        .global_shortcut()
+        .on_shortcut(new_shortcut, |app, _sc, event| {
+            on_shortcut(app, event.state())
+        })
+    {
+        log::error!("failed to register {accel}: {e}; keeping {old}");
+        if let Ok(old_shortcut) = old.parse::<Shortcut>() {
+            let _ = app
+                .global_shortcut()
+                .on_shortcut(old_shortcut, |app, _sc, event| {
+                    on_shortcut(app, event.state())
+                });
+        }
+        return;
+    }
+    *state.current_shortcut.lock().unwrap() = accel.to_string();
+    let mut cfg = config::Config::load();
+    cfg.shortcut = accel.to_string();
+    cfg.save();
+    log::info!("hotkey set to {accel}");
+    refresh_menu(app);
+}
+
 fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
     let state = app.state::<AppState>();
     let hold_mode = state.cfg.hotkey_mode == "hold";
@@ -172,9 +224,10 @@ const HISTORY_MENU_ITEMS: usize = 5;
 fn refresh_menu(app: &AppHandle) {
     let state = app.state::<AppState>();
     let recent = history::recent(HISTORY_MENU_ITEMS);
+    let current_shortcut = state.current_shortcut.lock().unwrap().clone();
     let status_label = format!(
         "Gretchen Flow — {} ({})",
-        state.cfg.shortcut, state.cfg.hotkey_mode
+        current_shortcut, state.cfg.hotkey_mode
     );
     let result = (|| -> tauri::Result<()> {
         let menu = Menu::new(app)?;
@@ -210,6 +263,33 @@ fn refresh_menu(app: &AppHandle) {
             }
             menu.append(&PredefinedMenuItem::separator(app)?)?;
         }
+        let hotkey_menu = Submenu::with_id(app, "hotkey-menu", "Hotkey", true)?;
+        let mut current_listed = false;
+        for (accel, label) in HOTKEY_CHOICES {
+            let checked = *accel == current_shortcut;
+            current_listed |= checked;
+            hotkey_menu.append(&CheckMenuItem::with_id(
+                app,
+                format!("hotkey-{accel}"),
+                *label,
+                true,
+                checked,
+                None::<&str>,
+            )?)?;
+        }
+        if !current_listed {
+            // A custom shortcut from config.json — show it as the checked entry.
+            hotkey_menu.append(&CheckMenuItem::with_id(
+                app,
+                format!("hotkey-{current_shortcut}"),
+                &current_shortcut,
+                true,
+                true,
+                None::<&str>,
+            )?)?;
+        }
+        menu.append(&hotkey_menu)?;
+
         let theme_label = if state.icon_dark.load(Ordering::SeqCst) {
             "Icon: Dark — switch to Light"
         } else {
@@ -248,6 +328,12 @@ fn on_menu_event(app: &AppHandle, id: &str) {
     }
     if id == "theme" {
         toggle_icon_theme(app);
+        return;
+    }
+    if let Some(accel) = id.strip_prefix("hotkey-") {
+        if accel != "menu" {
+            set_hotkey(app, accel);
+        }
         return;
     }
     let Some(idx) = id
@@ -316,6 +402,7 @@ fn main() {
             engine: Arc::new(Mutex::new(None)),
             recording: AtomicBool::new(false),
             icon_dark: AtomicBool::new(cfg.icon_theme != "light"),
+            current_shortcut: Mutex::new(cfg.shortcut.clone()),
             cfg,
             history_items: Mutex::new(Vec::new()),
         })
