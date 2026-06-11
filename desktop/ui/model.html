@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Custom Model</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; height: 100vh; margin: 0; gap: 12px;
+        user-select: none; -webkit-user-select: none;
+      }
+      p { margin: 0 24px; opacity: 0.7; font-size: 13px; text-align: center; }
+      p.hint { font-size: 11px; opacity: 0.5; }
+      input {
+        font-size: 16px; padding: 8px 14px; border-radius: 8px; width: 260px;
+        border: 1px solid rgba(127, 127, 127, 0.4); background: transparent;
+        color: inherit; text-align: center; outline: none;
+      }
+      #error { color: #ff453a; font-size: 12px; min-height: 16px; margin: 0; }
+      .row { display: flex; gap: 10px; }
+      button {
+        font-size: 13px; padding: 6px 18px; border-radius: 7px;
+        border: 1px solid rgba(127, 127, 127, 0.4); background: transparent;
+        color: inherit; cursor: pointer;
+      }
+      button.primary { background: #0a84ff; border-color: #0a84ff; color: white; }
+      button:disabled { opacity: 0.4; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <p>Enter a Whisper model name from the
+      <b>ggerganov/whisper.cpp</b> collection</p>
+    <input id="name" placeholder="e.g. medium.en" spellcheck="false"
+           autocapitalize="off" autocorrect="off" />
+    <p class="hint">tiny · base · small · medium · large-v3 · large-v3-turbo
+      (each also as .en and -q5_0 variants)</p>
+    <p id="error"></p>
+    <div class="row">
+      <button id="cancel">Cancel</button>
+      <button id="save" class="primary" disabled>Use This Model</button>
+    </div>
+    <script>
+      const { invoke } = window.__TAURI__.core;
+      const input = document.getElementById("name");
+      const error = document.getElementById("error");
+      const save = document.getElementById("save");
+
+      input.addEventListener("input", () => {
+        error.textContent = "";
+        save.disabled = input.value.trim() === "";
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !save.disabled) save.click();
+        if (e.key === "Escape") invoke("cancel_custom_model");
+      });
+      save.onclick = () => {
+        save.disabled = true;
+        error.textContent = "Checking…";
+        invoke("apply_custom_model", { name: input.value })
+          .catch((err) => {
+            error.textContent = String(err);
+            save.disabled = false;
+          });
+      };
+      document.getElementById("cancel").onclick = () =>
+        invoke("cancel_custom_model");
+      input.focus();
+    </script>
+  </body>
+</html>

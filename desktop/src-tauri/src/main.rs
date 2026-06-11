@@ -355,6 +355,53 @@ fn open_hotkey_window(app: &AppHandle) {
     }
 }
 
+/// Open (or focus) the custom model input window.
+fn open_model_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("model") {
+        let _ = window.set_focus();
+        return;
+    }
+    let result =
+        tauri::WebviewWindowBuilder::new(app, "model", tauri::WebviewUrl::App("model.html".into()))
+            .title("Custom Model — Gretchen Flow")
+            .inner_size(420.0, 250.0)
+            .resizable(false)
+            .always_on_top(true)
+            .build();
+    if let Err(e) = result {
+        log::error!("couldn't open model window: {e}");
+    }
+}
+
+#[tauri::command]
+async fn apply_custom_model(app: AppHandle, name: String) -> Result<(), String> {
+    let name = name.trim().to_string();
+    if name.is_empty() || name.contains(['/', ' ', '\\']) {
+        return Err("Enter a plain model name like \"medium.en\"".into());
+    }
+    // Validate the model exists in the collection before kicking off a
+    // potentially large download.
+    if !model::model_path(&name).exists() {
+        let url =
+            format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin");
+        ureq::head(&url)
+            .call()
+            .map_err(|_| format!("No model named \"{name}\" in the whisper.cpp collection"))?;
+    }
+    set_model(&app, &name);
+    if let Some(window) = app.get_webview_window("model") {
+        let _ = window.close();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn cancel_custom_model(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("model") {
+        let _ = window.close();
+    }
+}
+
 #[tauri::command]
 fn apply_custom_hotkey(app: AppHandle, accel: String) -> Result<(), String> {
     set_hotkey(&app, &accel)?;
@@ -455,17 +502,23 @@ fn refresh_menu_on_main(app: &AppHandle) {
         for (name, label) in MODEL_CHOICES {
             let checked = *name == current_model;
             model_listed |= checked;
+            let downloaded = model::model_path(name).exists();
+            let label = if downloaded {
+                format!("{label}  ✓")
+            } else {
+                format!("{label}  (needs download)")
+            };
             model_menu.append(&CheckMenuItem::with_id(
                 app,
                 format!("model-{name}"),
-                *label,
+                label,
                 true,
                 checked,
                 None::<&str>,
             )?)?;
         }
         if !model_listed {
-            // A custom model from config.json — show it as the checked entry.
+            // A custom model — show it as the checked entry.
             model_menu.append(&CheckMenuItem::with_id(
                 app,
                 format!("model-{current_model}"),
@@ -475,6 +528,14 @@ fn refresh_menu_on_main(app: &AppHandle) {
                 None::<&str>,
             )?)?;
         }
+        model_menu.append(&PredefinedMenuItem::separator(app)?)?;
+        model_menu.append(&MenuItem::with_id(
+            app,
+            "custom-model",
+            "Custom Model…",
+            true,
+            None::<&str>,
+        )?)?;
         menu.append(&model_menu)?;
 
         let hotkey_menu = Submenu::with_id(app, "hotkey-menu", "Hotkey", true)?;
@@ -554,6 +615,10 @@ fn on_menu_event(app: &AppHandle, id: &str) {
     }
     if id == "record-hotkey" {
         open_hotkey_window(app);
+        return;
+    }
+    if id == "custom-model" {
+        open_model_window(app);
         return;
     }
     if let Some(accel) = id.strip_prefix("hotkey-") {
@@ -639,7 +704,9 @@ fn main() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             apply_custom_hotkey,
-            cancel_custom_hotkey
+            cancel_custom_hotkey,
+            apply_custom_model,
+            cancel_custom_model
         ])
         .manage(AppState {
             recorder: audio::Recorder::spawn(),
