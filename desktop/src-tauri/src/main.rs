@@ -61,7 +61,9 @@ fn set_tray_state(app: &AppHandle, state: TrayState) {
     };
     let _ = tray.set_icon(Image::from_bytes(bytes).ok());
     let _ = tray.set_icon_as_template(template);
-    let _ = tray.set_title(title);
+    // Always set an explicit title: clearing with None doesn't reliably
+    // remove the previous text on macOS.
+    let _ = tray.set_title(Some(title.unwrap_or("")));
 }
 
 fn start_recording(app: &AppHandle) {
@@ -281,7 +283,6 @@ fn main() {
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(Image::from_bytes(ICON_IDLE)?)
                 .icon_as_template(true)
-                .title("↓")
                 .on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()))
                 .build(app)?;
             refresh_menu(app.handle());
