@@ -8,11 +8,11 @@
 
 mod audio;
 mod config;
-mod format_ai;
 mod history;
 mod inject;
 mod lists;
 mod model;
+mod polish;
 mod transcribe;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -41,6 +41,7 @@ enum TrayState {
 struct AppState {
     recorder: audio::Recorder,
     engine: Arc<Mutex<Option<transcribe::Engine>>>,
+    polisher: Arc<Mutex<Option<polish::Polisher>>>,
     recording: AtomicBool,
     cfg: config::Config,
     /// Full texts behind the tray's "Recent" items, newest first.
@@ -101,7 +102,7 @@ fn stop_and_transcribe(app: &AppHandle) {
         };
         match result {
             Ok(text) if !text.is_empty() => {
-                let text = ai_format_or_fallback(&state.cfg, text);
+                let text = polish_or_fallback(&state, text);
                 log::info!("transcribed: {text}");
                 if let Err(e) = inject::type_text(&text) {
                     log::error!("{e}");
@@ -116,19 +117,20 @@ fn stop_and_transcribe(app: &AppHandle) {
     });
 }
 
-/// Run the AI formatting pass when enabled and a key is available;
-/// otherwise (or on any error) keep the locally-formatted text.
-fn ai_format_or_fallback(cfg: &config::Config, text: String) -> String {
-    if !cfg.ai_format {
+/// Run the local AI cleanup when the polish model is loaded; otherwise (or on
+/// any error) keep the heuristically-formatted text.
+fn polish_or_fallback(state: &AppState, text: String) -> String {
+    if !state.cfg.ai_format {
         return text;
     }
-    let Some(key) = format_ai::api_key(cfg) else {
+    let guard = state.polisher.lock().unwrap();
+    let Some(polisher) = guard.as_ref() else {
         return text;
     };
-    match format_ai::format(cfg, &key, &text) {
-        Ok(formatted) => formatted,
+    match polisher.polish(&text) {
+        Ok(polished) => polished,
         Err(e) => {
-            log::warn!("AI formatting failed, using local cleanup: {e}");
+            log::warn!("polish failed, using local cleanup: {e}");
             text
         }
     }
@@ -265,6 +267,25 @@ fn load_engine_async(app: AppHandle) {
             Err(e) => {
                 log::error!("engine load failed: {e}");
                 set_tray_state(&app, TrayState::Error);
+                return;
+            }
+        }
+
+        // Polish model is optional — dictation works without it.
+        if cfg.ai_format {
+            let filename = cfg
+                .polish_model_url
+                .rsplit('/')
+                .next()
+                .unwrap_or("polish.gguf");
+            let loaded = model::ensure_file(&cfg.polish_model_url, filename)
+                .and_then(polish::Polisher::spawn);
+            match loaded {
+                Ok(polisher) => {
+                    *state.polisher.lock().unwrap() = Some(polisher);
+                    log::info!("polish model ready ({filename})");
+                }
+                Err(e) => log::warn!("polish model unavailable, using heuristics only: {e}"),
             }
         }
     });
@@ -290,6 +311,7 @@ fn main() {
         .manage(AppState {
             recorder: audio::Recorder::spawn(),
             engine: Arc::new(Mutex::new(None)),
+            polisher: Arc::new(Mutex::new(None)),
             recording: AtomicBool::new(false),
             cfg,
             history_items: Mutex::new(Vec::new()),

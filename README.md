@@ -11,10 +11,10 @@ editor, browser, chat, anywhere.
 - 🎙️ **Push-to-talk or toggle** — hold a key to talk, or tap to start/stop
 - ✍️ **Speech-aware grammar** — pausing while you speak inserts a period; filler
   words ("um", "uh") are removed automatically
-- 🪄 **AI formatting (optional)** — with an Anthropic API key, each transcript is
-  naturally cleaned up by Claude: self-corrections resolved, grammar fixed,
-  paragraphs and lists structured. Without a key, the local heuristics apply
-  and audio/text never leaves your machine
+- 🪄 **AI formatting, fully local** — a small on-device LLM (Qwen 2.5 1.5B via
+  llama.cpp) naturally cleans each transcript: self-corrections resolved,
+  grammar fixed, paragraphs and lists structured. No API key, no cloud —
+  nothing ever leaves your machine
 - 📋 **Spoken lists** — "one, buy milk… two, walk the dog" becomes a real
   numbered list, typed line by line
 - 📖 **Personal dictionary** — add names and jargon so they're recognized and
@@ -74,8 +74,6 @@ arrow disappears:
   "remove_fillers": true,
   "auto_lists": true,
   "ai_format": true,
-  "ai_format_model": "claude-opus-4-8",
-  "anthropic_api_key": "",
   "vocabulary": ["Gretchen Flow"]
 }
 ```
@@ -92,12 +90,11 @@ arrow disappears:
 - `auto_lists`: formats spoken lists ("one, … two, …" / "first, … second, …" /
   "number one, …") as numbered lines; conservative, so narrative sentences like
   "One day I went out" are left alone
-- `ai_format`: natural cleanup of each transcript via the Claude API — resolves
-  self-corrections ("Tuesday — no wait, Wednesday" → "Wednesday"), fixes grammar,
-  and structures paragraphs and lists. Activates only when a key is available
-  (`anthropic_api_key` or the `ANTHROPIC_API_KEY` environment variable); any
-  failure falls back to the local heuristics. `ai_format_model` picks the model
-  (`claude-haiku-4-5` is the fastest/cheapest option)
+- `ai_format`: natural cleanup of each transcript by a small local LLM —
+  resolves self-corrections ("Tuesday — no wait, Wednesday" → "Wednesday"),
+  fixes grammar, and structures paragraphs and lists. Runs entirely on-device
+  (the ~1 GB model downloads on first run); any failure falls back to the
+  heuristics. `polish_model_url` can point at any GGUF chat model
 - `vocabulary`: words and phrases (names, jargon, brands) that recognition is
   biased toward, so they come out spelled the way you wrote them
 
