@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -53,21 +53,23 @@ fn set_tray_state(app: &AppHandle, state: TrayState) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
-    // All states use full-color badges, so none are macOS template images.
-    let idle = if app.state::<AppState>().icon_dark.load(Ordering::SeqCst) {
-        ICON_IDLE_DARK
+    // Dark theme: white Gretchen on a black badge (full color). Light theme:
+    // the original silhouette as a macOS template image, recolored by the OS.
+    let dark = app.state::<AppState>().icon_dark.load(Ordering::SeqCst);
+    let (idle, idle_template) = if dark {
+        (ICON_IDLE_DARK, false)
     } else {
-        ICON_IDLE_LIGHT
+        (ICON_IDLE_LIGHT, true)
     };
-    let (bytes, title) = match state {
-        TrayState::Idle => (idle, None),
-        TrayState::Downloading => (idle, Some("↓")),
-        TrayState::Recording => (ICON_RECORDING, None),
-        TrayState::Transcribing => (ICON_TRANSCRIBING, None),
-        TrayState::Error => (idle, Some("✕")),
+    let (bytes, template, title) = match state {
+        TrayState::Idle => (idle, idle_template, None),
+        TrayState::Downloading => (idle, idle_template, Some("↓")),
+        TrayState::Recording => (ICON_RECORDING, false, None),
+        TrayState::Transcribing => (ICON_TRANSCRIBING, false, None),
+        TrayState::Error => (idle, idle_template, Some("✕")),
     };
     let _ = tray.set_icon(Image::from_bytes(bytes).ok());
-    let _ = tray.set_icon_as_template(false);
+    let _ = tray.set_icon_as_template(template);
     // Always set an explicit title: clearing with None doesn't reliably
     // remove the previous text on macOS.
     let _ = tray.set_title(Some(title.unwrap_or("")));
@@ -123,8 +125,8 @@ fn stop_and_transcribe(app: &AppHandle) {
     });
 }
 
-/// Click on the tray icon: cycle the idle badge between dark and light,
-/// and remember the choice in the config file.
+/// Menu action: switch the idle icon between dark and light, remember the
+/// choice in the config file, and relabel the menu item.
 fn toggle_icon_theme(app: &AppHandle) {
     let state = app.state::<AppState>();
     let dark = !state.icon_dark.load(Ordering::SeqCst);
@@ -136,6 +138,7 @@ fn toggle_icon_theme(app: &AppHandle) {
     cfg.icon_theme = if dark { "dark".into() } else { "light".into() };
     cfg.save();
     log::info!("icon theme: {}", cfg.icon_theme);
+    refresh_menu(app);
 }
 
 fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
@@ -207,6 +210,19 @@ fn refresh_menu(app: &AppHandle) {
             }
             menu.append(&PredefinedMenuItem::separator(app)?)?;
         }
+        let theme_label = if state.icon_dark.load(Ordering::SeqCst) {
+            "Icon: Dark — switch to Light"
+        } else {
+            "Icon: Light — switch to Dark"
+        };
+        menu.append(&MenuItem::with_id(
+            app,
+            "theme",
+            theme_label,
+            true,
+            None::<&str>,
+        )?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
         menu.append(&MenuItem::with_id(
             app,
             "quit",
@@ -228,6 +244,10 @@ fn refresh_menu(app: &AppHandle) {
 fn on_menu_event(app: &AppHandle, id: &str) {
     if id == "quit" {
         app.exit(0);
+        return;
+    }
+    if id == "theme" {
+        toggle_icon_theme(app);
         return;
     }
     let Some(idx) = id
@@ -303,25 +323,16 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let initial_icon = if app.state::<AppState>().icon_dark.load(Ordering::SeqCst) {
+            let dark = app.state::<AppState>().icon_dark.load(Ordering::SeqCst);
+            let initial_icon = if dark {
                 ICON_IDLE_DARK
             } else {
                 ICON_IDLE_LIGHT
             };
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(Image::from_bytes(initial_icon)?)
-                .show_menu_on_left_click(false)
+                .icon_as_template(!dark)
                 .on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()))
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        toggle_icon_theme(tray.app_handle());
-                    }
-                })
                 .build(app)?;
             refresh_menu(app.handle());
 

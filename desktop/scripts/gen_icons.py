@@ -5,9 +5,9 @@
 (icons/gretchen-source.png, white line art on black).
 
 - icons/icon.png: 1024x1024 app icon — white art on a rounded dark square
-- icons/tray/idle.png: 44x44 white Gretchen on a black rounded badge
-- icons/tray/idle-light.png: black Gretchen on a white rounded badge
-  (click the tray icon to cycle between the two)
+- icons/tray/idle.png: 44x44 white Gretchen on a black rounded badge (dark)
+- icons/tray/idle-light.png: the original template silhouette — black art on
+  transparency, recolored by macOS to match the menu bar (light)
 - icons/tray/recording.png: white Gretchen on an orange-to-yellow gradient
   badge — "live" indicator
 - icons/tray/transcribing.png: amber Gretchen — busy indicator
@@ -86,9 +86,8 @@ def main() -> None:
 
     app_icon(art).save(ICONS / "icon.png")
     black = (0, 0, 0)
-    white = (245, 245, 247)
     badge_icon(art, black, black).save(TRAY / "idle.png")
-    badge_icon(art, white, white, fg=(0, 0, 0)).save(TRAY / "idle-light.png")
+    tray_icon(art, (0, 0, 0, 255)).save(TRAY / "idle-light.png")
     badge_icon(art, (255, 140, 0), (255, 214, 10)).save(TRAY / "recording.png")
     tray_icon(art, (255, 159, 10, 255)).save(TRAY / "transcribing.png")
     print(f"wrote icon.png and 3 tray icons under {ICONS}")
