@@ -48,6 +48,8 @@ struct AppState {
     current_shortcut: Mutex<String>,
     /// True while the Fn/Globe key is the active hotkey.
     fn_hotkey: AtomicBool,
+    /// The active Whisper model name (changeable from the menu).
+    current_model: Mutex<String>,
     cfg: config::Config,
     /// Full texts behind the tray's "Recent" items, newest first.
     history_items: Mutex<Vec<String>>,
@@ -56,6 +58,17 @@ struct AppState {
 /// Special hotkey value: the Fn/Globe key, watched by a low-level listener
 /// because macOS can't register it as a normal shortcut.
 const FN_HOTKEY: &str = "Fn";
+
+/// Whisper model choices offered in the tray menu: (ggml name, display label).
+const MODEL_CHOICES: &[(&str, &str)] = &[
+    (
+        "large-v3-turbo-q5_0",
+        "Large v3 Turbo quantized — 547 MB (default)",
+    ),
+    ("large-v3-turbo", "Large v3 Turbo — 1.6 GB, max accuracy"),
+    ("small", "Small — 466 MB, lighter"),
+    ("base", "Base — 142 MB, fastest"),
+];
 
 /// Hotkey choices offered in the tray menu: (accelerator, display label).
 const HOTKEY_CHOICES: &[(&str, &str)] = &[
@@ -277,6 +290,50 @@ fn spawn_fn_listener(app: AppHandle) {
     });
 }
 
+/// Menu action: switch the Whisper model. Downloads it if needed and swaps
+/// the engine in the background; on failure the previous model stays active.
+fn set_model(app: &AppHandle, name: &str) {
+    let state = app.state::<AppState>();
+    let previous = {
+        let mut current = state.current_model.lock().unwrap();
+        if *current == name {
+            return;
+        }
+        let previous = current.clone();
+        *current = name.to_string();
+        previous
+    };
+    let mut cfg = config::Config::load();
+    cfg.model = name.to_string();
+    cfg.save();
+    refresh_menu(app);
+
+    let app = app.clone();
+    let name = name.to_string();
+    std::thread::spawn(move || {
+        set_tray_state(&app, TrayState::Downloading);
+        let cfg = config::Config::load();
+        let loaded = model::ensure_model(&name)
+            .and_then(|path| transcribe::Engine::load(&path.to_string_lossy(), &cfg));
+        let state = app.state::<AppState>();
+        match loaded {
+            Ok(engine) => {
+                *state.engine.lock().unwrap() = Some(engine);
+                log::info!("switched model to {name}");
+            }
+            Err(e) => {
+                log::error!("model switch to {name} failed, keeping {previous}: {e}");
+                *state.current_model.lock().unwrap() = previous.clone();
+                let mut cfg = config::Config::load();
+                cfg.model = previous;
+                cfg.save();
+                refresh_menu(&app);
+            }
+        }
+        set_tray_state(&app, TrayState::Idle);
+    });
+}
+
 /// Open (or focus) the small "press your shortcut" recorder window.
 fn open_hotkey_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("hotkey") {
@@ -392,6 +449,34 @@ fn refresh_menu_on_main(app: &AppHandle) {
             }
             menu.append(&PredefinedMenuItem::separator(app)?)?;
         }
+        let current_model = state.current_model.lock().unwrap().clone();
+        let model_menu = Submenu::with_id(app, "model-menu", "Model", true)?;
+        let mut model_listed = false;
+        for (name, label) in MODEL_CHOICES {
+            let checked = *name == current_model;
+            model_listed |= checked;
+            model_menu.append(&CheckMenuItem::with_id(
+                app,
+                format!("model-{name}"),
+                *label,
+                true,
+                checked,
+                None::<&str>,
+            )?)?;
+        }
+        if !model_listed {
+            // A custom model from config.json — show it as the checked entry.
+            model_menu.append(&CheckMenuItem::with_id(
+                app,
+                format!("model-{current_model}"),
+                &current_model,
+                true,
+                true,
+                None::<&str>,
+            )?)?;
+        }
+        menu.append(&model_menu)?;
+
         let hotkey_menu = Submenu::with_id(app, "hotkey-menu", "Hotkey", true)?;
         let mut current_listed = false;
         for (accel, label) in HOTKEY_CHOICES {
@@ -479,6 +564,12 @@ fn on_menu_event(app: &AppHandle, id: &str) {
         }
         return;
     }
+    if let Some(name) = id.strip_prefix("model-") {
+        if name != "menu" {
+            set_model(app, name);
+        }
+        return;
+    }
     let Some(idx) = id
         .strip_prefix("hist-")
         .and_then(|s| s.parse::<usize>().ok())
@@ -557,6 +648,7 @@ fn main() {
             icon_dark: AtomicBool::new(cfg.icon_theme != "light"),
             current_shortcut: Mutex::new(cfg.shortcut.clone()),
             fn_hotkey: AtomicBool::new(cfg.shortcut == FN_HOTKEY),
+            current_model: Mutex::new(cfg.model.clone()),
             cfg,
             history_items: Mutex::new(Vec::new()),
         })
