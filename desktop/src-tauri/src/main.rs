@@ -10,6 +10,7 @@ mod audio;
 mod config;
 mod history;
 mod inject;
+mod lists;
 mod model;
 mod transcribe;
 

@@ -21,6 +21,9 @@ pub struct Config {
     pub pause_punctuation_ms: u64,
     /// Strip filler words ("um", "uh", ...) from transcriptions.
     pub remove_fillers: bool,
+    /// Format spoken lists ("one, ... two, ..." / "first, ... second, ...")
+    /// as numbered lines.
+    pub auto_lists: bool,
     /// Personal dictionary: names and jargon to bias recognition toward,
     /// e.g. ["Gretchen Flow", "Tauri", "Kope"].
     pub vocabulary: Vec<String>,
@@ -39,6 +42,7 @@ impl Default for Config {
             hotkey_mode: "hold".into(),
             pause_punctuation_ms: 700,
             remove_fillers: true,
+            auto_lists: true,
             vocabulary: vec!["Gretchen Flow".into()],
             extra: serde_json::Map::new(),
         }

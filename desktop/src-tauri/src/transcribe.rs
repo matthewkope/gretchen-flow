@@ -13,6 +13,7 @@ pub struct Engine {
     language: Option<String>,
     pause_ms: i64,
     remove_fillers: bool,
+    auto_lists: bool,
     /// Personal-dictionary prompt: priming Whisper with the user's terms
     /// biases recognition toward them (and toward punctuated output).
     prompt: Option<String>,
@@ -43,6 +44,7 @@ impl Engine {
             language,
             pause_ms: cfg.pause_punctuation_ms as i64,
             remove_fillers: cfg.remove_fillers,
+            auto_lists: cfg.auto_lists,
             prompt,
         })
     }
@@ -77,7 +79,12 @@ impl Engine {
                 text.push_str(seg.trim());
                 text.push(' ');
             }
-            return Ok(post_process(&text, english, self.remove_fillers));
+            return Ok(post_process(
+                &text,
+                english,
+                self.remove_fillers,
+                self.auto_lists,
+            ));
         }
 
         let mut tokens = Vec::new();
@@ -107,12 +114,19 @@ impl Engine {
             self.pause_ms,
             english,
             self.remove_fillers,
+            self.auto_lists,
         ))
     }
 }
 
 /// Join tokens into text, turning speech pauses into sentence breaks.
-fn build_text(tokens: &[Token], pause_ms: i64, english: bool, fillers: bool) -> String {
+fn build_text(
+    tokens: &[Token],
+    pause_ms: i64,
+    english: bool,
+    fillers: bool,
+    lists: bool,
+) -> String {
     let mut out = String::new();
     let mut last_t1: Option<i64> = None;
     let mut capitalize = true;
@@ -147,17 +161,21 @@ fn build_text(tokens: &[Token], pause_ms: i64, english: bool, fillers: bool) -> 
         }
     }
 
-    post_process(&out, english, fillers)
+    post_process(&out, english, fillers, lists)
 }
 
-/// Shared cleanup: filler removal, English "i" fix, terminal punctuation.
-fn post_process(text: &str, english: bool, fillers: bool) -> String {
+/// Shared cleanup: filler removal, English "i" fix, list formatting,
+/// terminal punctuation.
+fn post_process(text: &str, english: bool, fillers: bool, lists: bool) -> String {
     let mut result = text.trim().to_string();
     if fillers {
         result = remove_filler_words(&result);
     }
     if english {
         result = fix_standalone_i(&result);
+    }
+    if lists {
+        result = crate::lists::format_lists(&result);
     }
     if result.chars().last().is_some_and(|c| c.is_alphanumeric()) {
         result.push('.');
@@ -260,7 +278,7 @@ mod tests {
             tok(" works", 250, 300),
         ];
         assert_eq!(
-            build_text(&tokens, 700, true, false),
+            build_text(&tokens, 700, true, false, false),
             "Hello world. This works."
         );
     }
@@ -268,7 +286,7 @@ mod tests {
     #[test]
     fn short_gap_does_not_break_sentence() {
         let tokens = [tok(" hello", 0, 50), tok(" world", 80, 130)];
-        assert_eq!(build_text(&tokens, 700, true, false), "Hello world.");
+        assert_eq!(build_text(&tokens, 700, true, false, false), "Hello world.");
     }
 
     #[test]
@@ -278,7 +296,7 @@ mod tests {
             tok("?", 50, 51),
             tok(" yes", 200, 250),
         ];
-        assert_eq!(build_text(&tokens, 700, true, false), "Really? Yes.");
+        assert_eq!(build_text(&tokens, 700, true, false, false), "Really? Yes.");
     }
 
     #[test]
@@ -290,7 +308,7 @@ mod tests {
             tok(" two", 300, 350),
         ];
         assert_eq!(
-            build_text(&tokens, 700, true, false),
+            build_text(&tokens, 700, true, false, false),
             "Sentence one. Sentence two."
         );
     }
@@ -302,7 +320,10 @@ mod tests {
             tok(" right", 80, 130),
             tok("?", 130, 131),
         ];
-        assert_eq!(build_text(&tokens, 700, true, false), "Great, right?");
+        assert_eq!(
+            build_text(&tokens, 700, true, false, false),
+            "Great, right?"
+        );
     }
 
     #[test]
@@ -313,7 +334,10 @@ mod tests {
             tok(" i'm", 40, 70),
             tok(" right", 70, 100),
         ];
-        assert_eq!(build_text(&tokens, 700, true, false), "I think I'm right.");
+        assert_eq!(
+            build_text(&tokens, 700, true, false, false),
+            "I think I'm right."
+        );
     }
 
     #[test]
@@ -341,7 +365,7 @@ mod tests {
             tok(" hello", 10, 40),
             tok(" world", 40, 70),
         ];
-        assert_eq!(build_text(&tokens, 700, true, true), "Hello world.");
+        assert_eq!(build_text(&tokens, 700, true, true, false), "Hello world.");
     }
 
     #[test]
@@ -355,6 +379,6 @@ mod tests {
         // build_text is only called when pause_ms > 0; still, a huge threshold
         // means no inserted periods.
         let tokens = [tok(" a", 0, 10), tok(" b", 500, 510)];
-        assert_eq!(build_text(&tokens, 100_000, true, false), "A b.");
+        assert_eq!(build_text(&tokens, 100_000, true, false, false), "A b.");
     }
 }

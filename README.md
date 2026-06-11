@@ -11,6 +11,8 @@ editor, browser, chat, anywhere.
 - 🎙️ **Push-to-talk or toggle** — hold a key to talk, or tap to start/stop
 - ✍️ **Speech-aware grammar** — pausing while you speak inserts a period; filler
   words ("um", "uh") are removed automatically
+- 📋 **Spoken lists** — "one, buy milk… two, walk the dog" becomes a real
+  numbered list, typed line by line
 - 📖 **Personal dictionary** — add names and jargon so they're recognized and
   spelled right
 - 🕘 **History** — recent dictations live in the tray menu; click one to type it again
@@ -66,6 +68,7 @@ arrow disappears:
   "hotkey_mode": "hold",
   "pause_punctuation_ms": 700,
   "remove_fillers": true,
+  "auto_lists": true,
   "vocabulary": ["Gretchen Flow"]
 }
 ```
@@ -79,6 +82,9 @@ arrow disappears:
   capitalizes the next sentence (smaller models often skip punctuation; this
   recovers it from your speech rhythm). Set `0` to disable.
 - `remove_fillers`: strips "um", "uh", "hmm", etc. from the output
+- `auto_lists`: formats spoken lists ("one, … two, …" / "first, … second, …" /
+  "number one, …") as numbered lines; conservative, so narrative sentences like
+  "One day I went out" are left alone
 - `vocabulary`: words and phrases (names, jargon, brands) that recognition is
   biased toward, so they come out spelled the way you wrote them
 
