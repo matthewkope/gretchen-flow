@@ -32,11 +32,20 @@ cargo run
 ```
 
 A **¿** appears in your menu bar. The first run downloads the Whisper model
-(~470 MB for `small`), shown as **↓¿**. When it turns back to **¿**:
+(~470 MB for `small`), shown as **¿↓**. When the arrow disappears:
 
 1. Click into any text field
-2. Press **Ctrl+Option+Space** — the icon turns **●** (recording)
-3. Speak, then press it again — **…** while transcribing, then your words are typed
+2. **Hold Ctrl+Option+Space** — the ¿ lights up bold red while it listens
+3. Speak, then **let go** — the ¿ turns amber while transcribing, then your
+   words are typed where your cursor is
+
+| Menu bar | Meaning |
+|---|---|
+| ¿ | idle, ready |
+| ¿↓ | downloading the model (first run) |
+| **¿** (bold red, glowing) | recording — release the keys to finish |
+| **¿** (amber) | transcribing |
+| ¿✕ | model failed to load (check the log) |
 
 ### Configuration
 
@@ -47,13 +56,13 @@ A **¿** appears in your menu bar. The first run downloads the Whisper model
   "model": "small",
   "language": "en",
   "shortcut": "Ctrl+Alt+Space",
-  "hotkey_mode": "toggle"
+  "hotkey_mode": "hold"
 }
 ```
 
 - `model`: any ggml model from [whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)
   — `base`, `small`, `medium`, `large-v3-turbo` (best accuracy, ~1.6 GB)
-- `hotkey_mode`: `"toggle"` or `"hold"` (push-to-talk — records while held)
+- `hotkey_mode`: `"hold"` (push-to-talk — records while held, default) or `"toggle"` (tap to start/stop)
 - `shortcut`: any [Tauri accelerator](https://v2.tauri.app/learn/global-shortcut/), e.g. `"Cmd+Shift+D"`
 
 ### macOS permissions

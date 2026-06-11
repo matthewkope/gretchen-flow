@@ -19,11 +19,12 @@ pub fn ensure_model(name: &str) -> Result<PathBuf, String> {
     }
     fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
 
-    let url =
-        format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin");
+    let url = format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin");
     log::info!("downloading model {name} from {url}");
 
-    let resp = ureq::get(&url).call().map_err(|e| format!("download failed: {e}"))?;
+    let resp = ureq::get(&url)
+        .call()
+        .map_err(|e| format!("download failed: {e}"))?;
     let tmp = path.with_extension("bin.part");
     let mut file = fs::File::create(&tmp).map_err(|e| e.to_string())?;
     std::io::copy(&mut resp.into_reader(), &mut file).map_err(|e| e.to_string())?;

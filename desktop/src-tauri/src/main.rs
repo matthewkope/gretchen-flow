@@ -1,7 +1,8 @@
 //! Gretchen Flow — menu-bar push-to-talk dictation.
 //!
-//! Menu bar shows the app state: ¿ idle, ↓ downloading model, ● recording,
-//! … transcribing.
+//! The menu bar ¿ shows the app state: quiet template glyph when idle,
+//! bold glowing red while recording, amber while transcribing, with a ↓
+//! suffix while the model downloads.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -14,16 +15,25 @@ mod transcribe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 const TRAY_ID: &str = "gf";
-const IDLE: &str = "¿";
-const DOWNLOADING: &str = "↓¿";
-const RECORDING: &str = "●";
-const TRANSCRIBING: &str = "…";
+const ICON_IDLE: &[u8] = include_bytes!("../icons/tray/idle.png");
+const ICON_RECORDING: &[u8] = include_bytes!("../icons/tray/recording.png");
+const ICON_TRANSCRIBING: &[u8] = include_bytes!("../icons/tray/transcribing.png");
+
+#[derive(Clone, Copy)]
+enum TrayState {
+    Downloading,
+    Idle,
+    Recording,
+    Transcribing,
+    Error,
+}
 
 struct AppState {
     recorder: audio::Recorder,
@@ -32,10 +42,22 @@ struct AppState {
     cfg: config::Config,
 }
 
-fn set_tray_title(app: &AppHandle, title: &str) {
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_title(Some(title));
-    }
+fn set_tray_state(app: &AppHandle, state: TrayState) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    // Template icons are recolored by macOS for light/dark menu bars; the
+    // recording/transcribing icons keep their own colors so they stand out.
+    let (bytes, template, title) = match state {
+        TrayState::Idle => (ICON_IDLE, true, None),
+        TrayState::Downloading => (ICON_IDLE, true, Some("↓")),
+        TrayState::Recording => (ICON_RECORDING, false, None),
+        TrayState::Transcribing => (ICON_TRANSCRIBING, false, None),
+        TrayState::Error => (ICON_IDLE, true, Some("✕")),
+    };
+    let _ = tray.set_icon(Image::from_bytes(bytes).ok());
+    let _ = tray.set_icon_as_template(template);
+    let _ = tray.set_title(title);
 }
 
 fn start_recording(app: &AppHandle) {
@@ -46,7 +68,7 @@ fn start_recording(app: &AppHandle) {
     }
     state.recording.store(true, Ordering::SeqCst);
     state.recorder.start();
-    set_tray_title(app, RECORDING);
+    set_tray_state(app, TrayState::Recording);
 }
 
 fn stop_and_transcribe(app: &AppHandle) {
@@ -56,10 +78,10 @@ fn stop_and_transcribe(app: &AppHandle) {
     let seconds = recording.samples.len() as f32 / recording.sample_rate as f32;
     if seconds < 0.3 {
         log::info!("recording too short ({seconds:.2}s), ignored");
-        set_tray_title(app, IDLE);
+        set_tray_state(app, TrayState::Idle);
         return;
     }
-    set_tray_title(app, TRANSCRIBING);
+    set_tray_state(app, TrayState::Transcribing);
 
     let app = app.clone();
     std::thread::spawn(move || {
@@ -82,7 +104,7 @@ fn stop_and_transcribe(app: &AppHandle) {
             Ok(_) => log::info!("no speech detected"),
             Err(e) => log::error!("transcription failed: {e}"),
         }
-        set_tray_title(&app, IDLE);
+        set_tray_state(&app, TrayState::Idle);
     });
 }
 
@@ -113,7 +135,7 @@ fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
 
 fn load_engine_async(app: AppHandle) {
     std::thread::spawn(move || {
-        set_tray_title(&app, DOWNLOADING);
+        set_tray_state(&app, TrayState::Downloading);
         let state = app.state::<AppState>();
         let cfg = state.cfg.clone();
         let loaded = model::ensure_model(&cfg.model)
@@ -122,11 +144,11 @@ fn load_engine_async(app: AppHandle) {
             Ok(engine) => {
                 *state.engine.lock().unwrap() = Some(engine);
                 log::info!("engine ready (model: {})", cfg.model);
-                set_tray_title(&app, IDLE);
+                set_tray_state(&app, TrayState::Idle);
             }
             Err(e) => {
                 log::error!("engine load failed: {e}");
-                set_tray_title(&app, "✕¿");
+                set_tray_state(&app, TrayState::Error);
             }
         }
     });
@@ -166,12 +188,12 @@ fn main() {
             );
             let status = MenuItem::with_id(app, "status", status_label, false, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Gretchen Flow", true, None::<&str>)?;
-            let menu = Menu::with_items(
-                app,
-                &[&status, &PredefinedMenuItem::separator(app)?, &quit],
-            )?;
+            let menu =
+                Menu::with_items(app, &[&status, &PredefinedMenuItem::separator(app)?, &quit])?;
             TrayIconBuilder::with_id(TRAY_ID)
-                .title(DOWNLOADING)
+                .icon(Image::from_bytes(ICON_IDLE)?)
+                .icon_as_template(true)
+                .title("↓")
                 .menu(&menu)
                 .on_menu_event(|app, event| {
                     if event.id() == "quit" {

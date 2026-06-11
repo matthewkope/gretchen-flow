@@ -27,7 +27,7 @@ impl Default for Config {
             model: "small".into(),
             language: "en".into(),
             shortcut: "Ctrl+Alt+Space".into(),
-            hotkey_mode: "toggle".into(),
+            hotkey_mode: "hold".into(),
             extra: serde_json::Map::new(),
         }
     }
