@@ -347,6 +347,7 @@ fn set_model(app: &AppHandle, name: &str) {
 
 /// Open (or focus) the small "press your shortcut" recorder window.
 fn open_hotkey_window(app: &AppHandle) {
+    activate_app();
     if let Some(window) = app.get_webview_window("hotkey") {
         let _ = window.set_focus();
         return;
@@ -366,9 +367,22 @@ fn open_hotkey_window(app: &AppHandle) {
     }
 }
 
+/// Activate the app so panels (file dialogs) center on screen — without
+/// this, an accessory app's dialogs appear in odd positions.
+fn activate_app() {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSApplication;
+    if let Some(mtm) = MainThreadMarker::new() {
+        let ns_app = NSApplication::sharedApplication(mtm);
+        #[allow(deprecated)]
+        ns_app.activateIgnoringOtherApps(true);
+    }
+}
+
 /// Native file picker: use a Whisper model file from anywhere on disk.
 fn pick_model_file(app: &AppHandle) {
     use tauri_plugin_dialog::DialogExt;
+    activate_app();
     let handle = app.clone();
     app.dialog()
         .file()
@@ -382,6 +396,7 @@ fn pick_model_file(app: &AppHandle) {
 
 /// Open (or focus) the custom model input window.
 fn open_model_window(app: &AppHandle) {
+    activate_app();
     if let Some(window) = app.get_webview_window("model") {
         let _ = window.set_focus();
         return;
