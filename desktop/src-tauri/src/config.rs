@@ -16,6 +16,9 @@ pub struct Config {
     pub shortcut: String,
     /// "toggle" (press to start/stop) or "hold" (push-to-talk).
     pub hotkey_mode: String,
+    /// Insert a period when the speaker pauses at least this long (ms).
+    /// 0 disables pause punctuation.
+    pub pause_punctuation_ms: u64,
     /// Keep unknown keys (e.g. the Python app's settings) intact on save.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
@@ -28,6 +31,7 @@ impl Default for Config {
             language: "en".into(),
             shortcut: "Ctrl+Alt+Space".into(),
             hotkey_mode: "hold".into(),
+            pause_punctuation_ms: 700,
             extra: serde_json::Map::new(),
         }
     }

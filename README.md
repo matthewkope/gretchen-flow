@@ -56,7 +56,8 @@ A **¿** appears in your menu bar. The first run downloads the Whisper model
   "model": "small",
   "language": "en",
   "shortcut": "Ctrl+Alt+Space",
-  "hotkey_mode": "hold"
+  "hotkey_mode": "hold",
+  "pause_punctuation_ms": 700
 }
 ```
 
@@ -64,6 +65,9 @@ A **¿** appears in your menu bar. The first run downloads the Whisper model
   — `base`, `small`, `medium`, `large-v3-turbo` (best accuracy, ~1.6 GB)
 - `hotkey_mode`: `"hold"` (push-to-talk — records while held, default) or `"toggle"` (tap to start/stop)
 - `shortcut`: any [Tauri accelerator](https://v2.tauri.app/learn/global-shortcut/), e.g. `"Cmd+Shift+D"`
+- `pause_punctuation_ms`: pausing this long while speaking inserts a period and
+  capitalizes the next sentence (smaller models often skip punctuation; this
+  recovers it from your speech rhythm). Set `0` to disable.
 
 ### macOS permissions
 

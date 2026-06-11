@@ -17,8 +17,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
-      - name: Check
-        run: cargo check
+      - name: Test
+        run: cargo test
       - name: Lint
         run: cargo clippy -- -D warnings
       - name: Format

@@ -138,8 +138,13 @@ fn load_engine_async(app: AppHandle) {
         set_tray_state(&app, TrayState::Downloading);
         let state = app.state::<AppState>();
         let cfg = state.cfg.clone();
-        let loaded = model::ensure_model(&cfg.model)
-            .and_then(|path| transcribe::Engine::load(&path.to_string_lossy(), &cfg.language));
+        let loaded = model::ensure_model(&cfg.model).and_then(|path| {
+            transcribe::Engine::load(
+                &path.to_string_lossy(),
+                &cfg.language,
+                cfg.pause_punctuation_ms as i64,
+            )
+        });
         match loaded {
             Ok(engine) => {
                 *state.engine.lock().unwrap() = Some(engine);
