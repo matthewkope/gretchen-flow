@@ -152,19 +152,16 @@ fn toggle_icon_theme(app: &AppHandle) {
     refresh_menu(app);
 }
 
-/// Menu action: switch the global hotkey, persist it, and update the menu.
-fn set_hotkey(app: &AppHandle, accel: &str) {
-    let new_shortcut: Shortcut = match accel.parse() {
-        Ok(s) => s,
-        Err(e) => {
-            log::error!("invalid shortcut {accel}: {e}");
-            return;
-        }
-    };
+/// Switch the global hotkey, persist it, and update the menu. On failure the
+/// previous hotkey stays registered.
+fn set_hotkey(app: &AppHandle, accel: &str) -> Result<(), String> {
+    let new_shortcut: Shortcut = accel
+        .parse()
+        .map_err(|e| format!("\"{accel}\" isn't a usable shortcut: {e}"))?;
     let state = app.state::<AppState>();
     let old = state.current_shortcut.lock().unwrap().clone();
     if old == accel {
-        return;
+        return Ok(());
     }
     if let Ok(old_shortcut) = old.parse::<Shortcut>() {
         let _ = app.global_shortcut().unregister(old_shortcut);
@@ -175,7 +172,6 @@ fn set_hotkey(app: &AppHandle, accel: &str) {
             on_shortcut(app, event.state())
         })
     {
-        log::error!("failed to register {accel}: {e}; keeping {old}");
         if let Ok(old_shortcut) = old.parse::<Shortcut>() {
             let _ = app
                 .global_shortcut()
@@ -183,7 +179,7 @@ fn set_hotkey(app: &AppHandle, accel: &str) {
                     on_shortcut(app, event.state())
                 });
         }
-        return;
+        return Err(format!("couldn't register \"{accel}\": {e}"));
     }
     *state.current_shortcut.lock().unwrap() = accel.to_string();
     let mut cfg = config::Config::load();
@@ -191,6 +187,44 @@ fn set_hotkey(app: &AppHandle, accel: &str) {
     cfg.save();
     log::info!("hotkey set to {accel}");
     refresh_menu(app);
+    Ok(())
+}
+
+/// Open (or focus) the small "press your shortcut" recorder window.
+fn open_hotkey_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("hotkey") {
+        let _ = window.set_focus();
+        return;
+    }
+    let result = tauri::WebviewWindowBuilder::new(
+        app,
+        "hotkey",
+        tauri::WebviewUrl::App("hotkey.html".into()),
+    )
+    .title("Set Hotkey — Gretchen Flow")
+    .inner_size(380.0, 230.0)
+    .resizable(false)
+    .always_on_top(true)
+    .build();
+    if let Err(e) = result {
+        log::error!("couldn't open hotkey window: {e}");
+    }
+}
+
+#[tauri::command]
+fn apply_custom_hotkey(app: AppHandle, accel: String) -> Result<(), String> {
+    set_hotkey(&app, &accel)?;
+    if let Some(window) = app.get_webview_window("hotkey") {
+        let _ = window.close();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn cancel_custom_hotkey(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("hotkey") {
+        let _ = window.close();
+    }
 }
 
 fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
@@ -278,7 +312,7 @@ fn refresh_menu(app: &AppHandle) {
             )?)?;
         }
         if !current_listed {
-            // A custom shortcut from config.json — show it as the checked entry.
+            // A custom shortcut — show it as the checked entry.
             hotkey_menu.append(&CheckMenuItem::with_id(
                 app,
                 format!("hotkey-{current_shortcut}"),
@@ -288,6 +322,14 @@ fn refresh_menu(app: &AppHandle) {
                 None::<&str>,
             )?)?;
         }
+        hotkey_menu.append(&PredefinedMenuItem::separator(app)?)?;
+        hotkey_menu.append(&MenuItem::with_id(
+            app,
+            "record-hotkey",
+            "Set Custom Hotkey…",
+            true,
+            None::<&str>,
+        )?)?;
         menu.append(&hotkey_menu)?;
 
         let theme_label = if state.icon_dark.load(Ordering::SeqCst) {
@@ -330,9 +372,15 @@ fn on_menu_event(app: &AppHandle, id: &str) {
         toggle_icon_theme(app);
         return;
     }
+    if id == "record-hotkey" {
+        open_hotkey_window(app);
+        return;
+    }
     if let Some(accel) = id.strip_prefix("hotkey-") {
         if accel != "menu" {
-            set_hotkey(app, accel);
+            if let Err(e) = set_hotkey(app, accel) {
+                log::error!("{e}");
+            }
         }
         return;
     }
@@ -397,6 +445,10 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            apply_custom_hotkey,
+            cancel_custom_hotkey
+        ])
         .manage(AppState {
             recorder: audio::Recorder::spawn(),
             engine: Arc::new(Mutex::new(None)),

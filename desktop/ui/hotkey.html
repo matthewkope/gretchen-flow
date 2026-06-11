@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Set Hotkey</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: center; height: 100vh; margin: 0; gap: 14px;
+        user-select: none; -webkit-user-select: none;
+      }
+      p { margin: 0; opacity: 0.7; font-size: 13px; }
+      #combo {
+        font-size: 24px; font-weight: 600; min-height: 34px;
+        padding: 10px 24px; border-radius: 10px;
+        background: rgba(127, 127, 127, 0.15);
+      }
+      #error { color: #ff453a; font-size: 12px; min-height: 16px; margin: 0; }
+      .row { display: flex; gap: 10px; }
+      button {
+        font-size: 13px; padding: 6px 18px; border-radius: 7px;
+        border: 1px solid rgba(127, 127, 127, 0.4); background: transparent;
+        color: inherit; cursor: pointer;
+      }
+      button.primary { background: #0a84ff; border-color: #0a84ff; color: white; }
+      button:disabled { opacity: 0.4; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <p>Press the key combination you want to use</p>
+    <div id="combo">…</div>
+    <p id="error"></p>
+    <div class="row">
+      <button id="cancel">Cancel</button>
+      <button id="save" class="primary" disabled>Use This Hotkey</button>
+    </div>
+    <script>
+      const { invoke } = window.__TAURI__.core;
+      const combo = document.getElementById("combo");
+      const error = document.getElementById("error");
+      const save = document.getElementById("save");
+      let accel = null;
+
+      const SYMBOLS = { Cmd: "⌘", Ctrl: "⌃", Alt: "⌥", Shift: "⇧" };
+      const KEYMAP = {
+        Space: "Space", Enter: "Enter", Tab: "Tab", Backspace: "Backspace",
+        Delete: "Delete", ArrowUp: "Up", ArrowDown: "Down",
+        ArrowLeft: "Left", ArrowRight: "Right",
+        Minus: "-", Equal: "=", Comma: ",", Period: ".", Slash: "/",
+        Semicolon: ";", Quote: "'", BracketLeft: "[", BracketRight: "]",
+        Backslash: "\\", Backquote: "`",
+      };
+
+      function keyName(e) {
+        const c = e.code;
+        if (c.startsWith("Key")) return c.slice(3);
+        if (c.startsWith("Digit")) return c.slice(5);
+        if (/^F\d+$/.test(c)) return c;
+        return KEYMAP[c] || null;
+      }
+
+      window.addEventListener("keydown", (e) => {
+        e.preventDefault();
+        if (e.key === "Escape") { invoke("cancel_custom_hotkey"); return; }
+        error.textContent = "";
+        const mods = [];
+        if (e.metaKey) mods.push("Cmd");
+        if (e.ctrlKey) mods.push("Ctrl");
+        if (e.altKey) mods.push("Alt");
+        if (e.shiftKey) mods.push("Shift");
+        const key = keyName(e);
+        if (!key) {
+          // Modifier-only so far — show progress.
+          combo.textContent = mods.length
+            ? mods.map((m) => SYMBOLS[m]).join("") + " …" : "…";
+          save.disabled = true; accel = null;
+          return;
+        }
+        if (!mods.length && !/^F\d+$/.test(key)) {
+          combo.textContent = "…";
+          error.textContent = "Add a modifier (⌘ ⌃ ⌥ ⇧) or use an F-key";
+          save.disabled = true; accel = null;
+          return;
+        }
+        accel = [...mods, key].join("+");
+        combo.textContent = mods.map((m) => SYMBOLS[m]).join("") + " " + key;
+        save.disabled = false;
+      });
+
+      save.onclick = () => {
+        if (!accel) return;
+        invoke("apply_custom_hotkey", { accel }).catch((err) => {
+          error.textContent = String(err);
+        });
+      };
+      document.getElementById("cancel").onclick = () =>
+        invoke("cancel_custom_hotkey");
+    </script>
+  </body>
+</html>
