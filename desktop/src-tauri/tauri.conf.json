@@ -12,7 +12,7 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
-    "icon": [],
+    "icon": ["icons/icon.png", "icons/icon.icns"],
     "macOS": {
       "minimumSystemVersion": "12.0"
     }

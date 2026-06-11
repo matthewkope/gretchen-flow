@@ -7,7 +7,7 @@ a global hotkey starts recording, your speech is transcribed locally with
 Whisper, and the text is typed straight into whatever app has focus — your
 editor, browser, chat, anywhere.
 
-- ¿ **Lives in the menu bar** — quiet ¿ when idle, bold glowing red while recording, amber while transcribing
+- 👧 **Gretchen lives in the menu bar** — quiet when idle, glowing red while recording, amber while transcribing
 - 🎙️ **Push-to-talk or toggle** — hold a key to talk, or tap to start/stop
 - ✍️ **Speech-aware grammar** — pausing while you speak inserts a period; filler
   words ("um", "uh") are removed automatically
@@ -39,22 +39,22 @@ cd gretchen-flow/desktop/src-tauri
 cargo run
 ```
 
-A **¿** appears in your menu bar. The first run downloads the Whisper model
-(~574 MB for the default `large-v3-turbo-q5_0`), shown as **¿↓**. When the
-arrow disappears:
+**Gretchen** appears in your menu bar. The first run downloads the Whisper
+model (~574 MB for the default `large-v3-turbo-q5_0`), shown with a **↓**.
+When the arrow disappears:
 
 1. Click into any text field
-2. **Hold Ctrl+Option+Space** — the ¿ lights up bold red while it listens
-3. Speak, then **let go** — the ¿ turns amber while transcribing, then your
+2. **Hold Ctrl+Option+Space** — Gretchen lights up red while she listens
+3. Speak, then **let go** — she turns amber while transcribing, then your
    words are typed where your cursor is
 
-| Menu bar | Meaning |
+| Menu bar (Gretchen icon) | Meaning |
 |---|---|
-| ¿ | idle, ready |
-| ¿↓ | downloading the model (first run) |
-| **¿** (bold red, glowing) | recording — release the keys to finish |
-| **¿** (amber) | transcribing |
-| ¿✕ | model failed to load (check the log) |
+| monochrome | idle, ready |
+| with ↓ | downloading the model (first run) |
+| **red, glowing** | recording — release the keys to finish |
+| **amber** | transcribing |
+| with ✕ | model failed to load (check the log) |
 
 ### Configuration
 
