@@ -29,7 +29,7 @@ const ICON_IDLE_LIGHT: &[u8] = include_bytes!("../icons/tray/idle-light.png");
 const ICON_RECORDING: &[u8] = include_bytes!("../icons/tray/recording.png");
 const ICON_TRANSCRIBING: &[u8] = include_bytes!("../icons/tray/transcribing.png");
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum TrayState {
     Downloading,
     Idle,
@@ -86,6 +86,13 @@ fn set_tray_state(app: &AppHandle, state: TrayState) {
     let _ = app.run_on_main_thread(move || set_tray_state_on_main(&handle, state));
 }
 
+thread_local! {
+    /// Last applied (state, dark) — skip no-op tray updates so an open
+    /// dropdown isn't disturbed by redundant icon/title writes.
+    static LAST_TRAY: std::cell::Cell<Option<(TrayState, bool)>> =
+        const { std::cell::Cell::new(None) };
+}
+
 fn set_tray_state_on_main(app: &AppHandle, state: TrayState) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
@@ -93,6 +100,10 @@ fn set_tray_state_on_main(app: &AppHandle, state: TrayState) {
     // Dark theme: white Gretchen on a black badge (full color). Light theme:
     // the original silhouette as a macOS template image, recolored by the OS.
     let dark = app.state::<AppState>().icon_dark.load(Ordering::SeqCst);
+    if LAST_TRAY.with(|c| c.get()) == Some((state, dark)) {
+        return;
+    }
+    LAST_TRAY.with(|c| c.set(Some((state, dark))));
     let (idle, idle_template) = if dark {
         (ICON_IDLE_DARK, false)
     } else {
@@ -355,6 +366,20 @@ fn open_hotkey_window(app: &AppHandle) {
     }
 }
 
+/// Native file picker: use a Whisper model file from anywhere on disk.
+fn pick_model_file(app: &AppHandle) {
+    use tauri_plugin_dialog::DialogExt;
+    let handle = app.clone();
+    app.dialog()
+        .file()
+        .add_filter("Whisper model", &["bin", "gguf"])
+        .pick_file(move |file| {
+            if let Some(path) = file.and_then(|f| f.into_path().ok()) {
+                set_model(&handle, &path.to_string_lossy());
+            }
+        });
+}
+
 /// Open (or focus) the custom model input window.
 fn open_model_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("model") {
@@ -511,6 +536,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<MenuHandles> {
         true,
         None::<&str>,
     )?)?;
+    model_menu.append(&MenuItem::with_id(
+        app,
+        "model-file",
+        "Model from File…",
+        true,
+        None::<&str>,
+    )?)?;
     menu.append(&model_menu)?;
 
     let hotkey_menu = Submenu::with_id(app, "hotkey-menu", "Hotkey", true)?;
@@ -626,7 +658,16 @@ fn refresh_menu_on_main(app: &AppHandle) {
             let _ = h.model_custom.set_enabled(false);
             let _ = h.model_custom.set_checked(false);
         } else {
-            let _ = h.model_custom.set_text(current_model.clone());
+            // File-path models display as their file name.
+            let label = if current_model.starts_with('/') {
+                std::path::Path::new(&current_model)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| current_model.clone())
+            } else {
+                current_model.clone()
+            };
+            let _ = h.model_custom.set_text(label);
             let _ = h.model_custom.set_enabled(true);
             let _ = h.model_custom.set_checked(true);
         }
@@ -658,8 +699,13 @@ fn refresh_menu_on_main(app: &AppHandle) {
 }
 
 fn on_menu_event(app: &AppHandle, id: &str) {
+    log::info!("menu event: {id}");
     if id == "quit" {
         app.exit(0);
+        return;
+    }
+    if id == "model-file" {
+        pick_model_file(app);
         return;
     }
     if id == "theme" {
@@ -756,8 +802,15 @@ fn main() {
         )
     };
 
+    // Surface panics in the log — an unwind across a system callback aborts
+    // the process with no crash report otherwise.
+    std::panic::set_hook(Box::new(|info| {
+        log::error!("PANIC: {info}");
+    }));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             apply_custom_hotkey,
             cancel_custom_hotkey,
@@ -806,12 +859,15 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Gretchen Flow")
-        .run(|_app, event| {
+        .run(|_app, event| match event {
             // Keep running with zero windows; only exit via the Quit menu item.
-            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+            tauri::RunEvent::ExitRequested { code, api, .. } => {
+                log::info!("exit requested (code: {code:?})");
                 if code.is_none() {
                     api.prevent_exit();
                 }
             }
+            tauri::RunEvent::Exit => log::info!("exiting"),
+            _ => {}
         });
 }

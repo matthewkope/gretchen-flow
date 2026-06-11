@@ -11,8 +11,18 @@ pub fn model_path(name: &str) -> PathBuf {
         .join(format!("ggml-{name}.bin"))
 }
 
-/// Ensure the model file exists locally, downloading it if needed.
+/// Ensure the Whisper model is available locally. Absolute paths are used
+/// as-is (user-supplied model files); names are downloaded from the
+/// whisper.cpp collection if needed.
 pub fn ensure_model(name: &str) -> Result<PathBuf, String> {
+    if name.starts_with('/') {
+        let path = PathBuf::from(name);
+        return if path.exists() {
+            Ok(path)
+        } else {
+            Err(format!("model file not found: {name}"))
+        };
+    }
     let path = model_path(name);
     if path.exists() {
         return Ok(path);
