@@ -24,12 +24,6 @@ pub struct Config {
     /// Format spoken lists ("one, ... two, ..." / "first, ... second, ...")
     /// as numbered lines.
     pub auto_lists: bool,
-    /// Natural cleanup of each transcript by a small local LLM (fully
-    /// on-device; nothing leaves your machine). Falls back to the heuristics
-    /// above if the model can't be loaded.
-    pub ai_format: bool,
-    /// GGUF chat model used for local cleanup (downloaded on first run).
-    pub polish_model_url: String,
     /// Personal dictionary: names and jargon to bias recognition toward,
     /// e.g. ["Gretchen Flow", "Tauri", "Kope"].
     pub vocabulary: Vec<String>,
@@ -49,10 +43,6 @@ impl Default for Config {
             pause_punctuation_ms: 700,
             remove_fillers: true,
             auto_lists: true,
-            ai_format: true,
-            polish_model_url:
-                "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-                    .into(),
             vocabulary: vec!["Gretchen Flow".into()],
             extra: serde_json::Map::new(),
         }

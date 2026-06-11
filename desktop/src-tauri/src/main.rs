@@ -12,7 +12,6 @@ mod history;
 mod inject;
 mod lists;
 mod model;
-mod polish;
 mod transcribe;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -41,7 +40,6 @@ enum TrayState {
 struct AppState {
     recorder: audio::Recorder,
     engine: Arc<Mutex<Option<transcribe::Engine>>>,
-    polisher: Arc<Mutex<Option<polish::Polisher>>>,
     recording: AtomicBool,
     cfg: config::Config,
     /// Full texts behind the tray's "Recent" items, newest first.
@@ -102,7 +100,6 @@ fn stop_and_transcribe(app: &AppHandle) {
         };
         match result {
             Ok(text) if !text.is_empty() => {
-                let text = polish_or_fallback(&state, text);
                 log::info!("transcribed: {text}");
                 if let Err(e) = inject::type_text(&text) {
                     log::error!("{e}");
@@ -115,25 +112,6 @@ fn stop_and_transcribe(app: &AppHandle) {
         }
         set_tray_state(&app, TrayState::Idle);
     });
-}
-
-/// Run the local AI cleanup when the polish model is loaded; otherwise (or on
-/// any error) keep the heuristically-formatted text.
-fn polish_or_fallback(state: &AppState, text: String) -> String {
-    if !state.cfg.ai_format {
-        return text;
-    }
-    let guard = state.polisher.lock().unwrap();
-    let Some(polisher) = guard.as_ref() else {
-        return text;
-    };
-    match polisher.polish(&text) {
-        Ok(polished) => polished,
-        Err(e) => {
-            log::warn!("polish failed, using local cleanup: {e}");
-            text
-        }
-    }
 }
 
 fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
@@ -267,25 +245,6 @@ fn load_engine_async(app: AppHandle) {
             Err(e) => {
                 log::error!("engine load failed: {e}");
                 set_tray_state(&app, TrayState::Error);
-                return;
-            }
-        }
-
-        // Polish model is optional — dictation works without it.
-        if cfg.ai_format {
-            let filename = cfg
-                .polish_model_url
-                .rsplit('/')
-                .next()
-                .unwrap_or("polish.gguf");
-            let loaded = model::ensure_file(&cfg.polish_model_url, filename)
-                .and_then(polish::Polisher::spawn);
-            match loaded {
-                Ok(polisher) => {
-                    *state.polisher.lock().unwrap() = Some(polisher);
-                    log::info!("polish model ready ({filename})");
-                }
-                Err(e) => log::warn!("polish model unavailable, using heuristics only: {e}"),
             }
         }
     });
@@ -311,7 +270,6 @@ fn main() {
         .manage(AppState {
             recorder: audio::Recorder::spawn(),
             engine: Arc::new(Mutex::new(None)),
-            polisher: Arc::new(Mutex::new(None)),
             recording: AtomicBool::new(false),
             cfg,
             history_items: Mutex::new(Vec::new()),
