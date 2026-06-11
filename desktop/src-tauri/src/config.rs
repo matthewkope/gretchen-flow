@@ -24,6 +24,16 @@ pub struct Config {
     /// Format spoken lists ("one, ... two, ..." / "first, ... second, ...")
     /// as numbered lines.
     pub auto_lists: bool,
+    /// Natural-language cleanup of each transcript via the Claude API.
+    /// Active only when an API key is available (anthropic_api_key here or
+    /// the ANTHROPIC_API_KEY environment variable); otherwise the local
+    /// heuristics above are used on their own.
+    pub ai_format: bool,
+    /// Model for the AI formatting pass. "claude-haiku-4-5" is the
+    /// fastest/cheapest option if latency bothers you.
+    pub ai_format_model: String,
+    /// Anthropic API key; leave empty to use the ANTHROPIC_API_KEY env var.
+    pub anthropic_api_key: String,
     /// Personal dictionary: names and jargon to bias recognition toward,
     /// e.g. ["Gretchen Flow", "Tauri", "Kope"].
     pub vocabulary: Vec<String>,
@@ -43,6 +53,9 @@ impl Default for Config {
             pause_punctuation_ms: 700,
             remove_fillers: true,
             auto_lists: true,
+            ai_format: true,
+            ai_format_model: "claude-opus-4-8".into(),
+            anthropic_api_key: String::new(),
             vocabulary: vec!["Gretchen Flow".into()],
             extra: serde_json::Map::new(),
         }

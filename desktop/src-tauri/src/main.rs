@@ -8,6 +8,7 @@
 
 mod audio;
 mod config;
+mod format_ai;
 mod history;
 mod inject;
 mod lists;
@@ -100,6 +101,7 @@ fn stop_and_transcribe(app: &AppHandle) {
         };
         match result {
             Ok(text) if !text.is_empty() => {
+                let text = ai_format_or_fallback(&state.cfg, text);
                 log::info!("transcribed: {text}");
                 if let Err(e) = inject::type_text(&text) {
                     log::error!("{e}");
@@ -112,6 +114,24 @@ fn stop_and_transcribe(app: &AppHandle) {
         }
         set_tray_state(&app, TrayState::Idle);
     });
+}
+
+/// Run the AI formatting pass when enabled and a key is available;
+/// otherwise (or on any error) keep the locally-formatted text.
+fn ai_format_or_fallback(cfg: &config::Config, text: String) -> String {
+    if !cfg.ai_format {
+        return text;
+    }
+    let Some(key) = format_ai::api_key(cfg) else {
+        return text;
+    };
+    match format_ai::format(cfg, &key, &text) {
+        Ok(formatted) => formatted,
+        Err(e) => {
+            log::warn!("AI formatting failed, using local cleanup: {e}");
+            text
+        }
+    }
 }
 
 fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
