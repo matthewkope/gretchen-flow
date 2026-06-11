@@ -67,7 +67,13 @@ const HOTKEY_CHOICES: &[(&str, &str)] = &[
     ("Fn", "Fn  (🌐 Globe key)"),
 ];
 
+/// Apply a tray state on the main thread (AppKit UI is not thread-safe).
 fn set_tray_state(app: &AppHandle, state: TrayState) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || set_tray_state_on_main(&handle, state));
+}
+
+fn set_tray_state_on_main(app: &AppHandle, state: TrayState) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
@@ -335,8 +341,16 @@ fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
 
 const HISTORY_MENU_ITEMS: usize = 5;
 
-/// Rebuild the tray menu, including the latest history entries.
+/// Rebuild the tray menu on the main thread (AppKit menus are not
+/// thread-safe; building from the transcription thread glitches the
+/// dropdown).
 fn refresh_menu(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || refresh_menu_on_main(&handle));
+}
+
+/// Rebuild the tray menu, including the latest history entries.
+fn refresh_menu_on_main(app: &AppHandle) {
     let state = app.state::<AppState>();
     let recent = history::recent(HISTORY_MENU_ITEMS);
     let current_shortcut = state.current_shortcut.lock().unwrap().clone();
