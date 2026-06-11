@@ -5,8 +5,7 @@
 (icons/gretchen-source.png, white line art on black).
 
 - icons/icon.png: 1024x1024 app icon — white art on a rounded dark square
-- icons/tray/idle.png: 44x44 template image (black + alpha from the art's
-  luminance; macOS recolors it for light/dark menu bars)
+- icons/tray/idle.png: 44x44 white Gretchen on a black rounded badge
 - icons/tray/recording.png: white Gretchen on an orange-to-yellow gradient
   badge — "live" indicator
 - icons/tray/transcribing.png: amber Gretchen — busy indicator
@@ -41,10 +40,10 @@ def app_icon(art: Image.Image) -> Image.Image:
     return icon
 
 
-def recording_icon(art: Image.Image, boost: float = 1.6) -> Image.Image:
-    """White art in the foreground, orange-to-yellow gradient badge behind."""
+def badge_icon(art: Image.Image, top, bottom, boost: float = 1.6) -> Image.Image:
+    """White art in the foreground, vertical-gradient rounded badge behind
+    (pass top == bottom for a solid color)."""
     size = TRAY_SIZE
-    top, bottom = (255, 140, 0), (255, 214, 10)  # orange -> yellow
     gradient = Image.new("RGBA", (size, size))
     for y in range(size):
         t = y / (size - 1)
@@ -84,8 +83,9 @@ def main() -> None:
     TRAY.mkdir(parents=True, exist_ok=True)
 
     app_icon(art).save(ICONS / "icon.png")
-    tray_icon(art, (0, 0, 0, 255)).save(TRAY / "idle.png")
-    recording_icon(art).save(TRAY / "recording.png")
+    black = (0, 0, 0)
+    badge_icon(art, black, black).save(TRAY / "idle.png")
+    badge_icon(art, (255, 140, 0), (255, 214, 10)).save(TRAY / "recording.png")
     tray_icon(art, (255, 159, 10, 255)).save(TRAY / "transcribing.png")
     print(f"wrote icon.png and 3 tray icons under {ICONS}")
 

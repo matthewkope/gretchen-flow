@@ -50,14 +50,14 @@ fn set_tray_state(app: &AppHandle, state: TrayState) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
-    // Template icons are recolored by macOS for light/dark menu bars; the
-    // recording/transcribing icons keep their own colors so they stand out.
+    // All states use full-color badges (white Gretchen on black / gradient),
+    // so none are macOS template images.
     let (bytes, template, title) = match state {
-        TrayState::Idle => (ICON_IDLE, true, None),
-        TrayState::Downloading => (ICON_IDLE, true, Some("↓")),
+        TrayState::Idle => (ICON_IDLE, false, None),
+        TrayState::Downloading => (ICON_IDLE, false, Some("↓")),
         TrayState::Recording => (ICON_RECORDING, false, None),
         TrayState::Transcribing => (ICON_TRANSCRIBING, false, None),
-        TrayState::Error => (ICON_IDLE, true, Some("✕")),
+        TrayState::Error => (ICON_IDLE, false, Some("✕")),
     };
     let _ = tray.set_icon(Image::from_bytes(bytes).ok());
     let _ = tray.set_icon_as_template(template);
