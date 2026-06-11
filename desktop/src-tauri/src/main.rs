@@ -445,162 +445,215 @@ fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
 
 const HISTORY_MENU_ITEMS: usize = 5;
 
-/// Rebuild the tray menu on the main thread (AppKit menus are not
-/// thread-safe; building from the transcription thread glitches the
-/// dropdown).
+/// Handles to the menu items that change at runtime. The menu is built once
+/// and mutated in place — replacing a tray menu (or its submenus) while macOS
+/// has shown it once makes the dropdown glitch on the next hover.
+struct MenuHandles {
+    menu: Menu<tauri::Wry>,
+    status: MenuItem<tauri::Wry>,
+    hist_header: MenuItem<tauri::Wry>,
+    hist: Vec<MenuItem<tauri::Wry>>,
+    model_items: Vec<CheckMenuItem<tauri::Wry>>,
+    model_custom: CheckMenuItem<tauri::Wry>,
+    hotkey_items: Vec<CheckMenuItem<tauri::Wry>>,
+    hotkey_custom: CheckMenuItem<tauri::Wry>,
+    theme: MenuItem<tauri::Wry>,
+}
+
+thread_local! {
+    /// Menu handles live on the main thread only (AppKit menu items are not
+    /// thread-safe); all access goes through run_on_main_thread.
+    static MENU_HANDLES: std::cell::RefCell<Option<MenuHandles>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Build the full tray menu once, with fixed slots for everything dynamic.
+fn build_menu(app: &AppHandle) -> tauri::Result<MenuHandles> {
+    let menu = Menu::new(app)?;
+
+    let status = MenuItem::with_id(app, "status", "Gretchen Flow", false, None::<&str>)?;
+    menu.append(&status)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+
+    let hist_header =
+        MenuItem::with_id(app, "hist-header", "No dictations yet", false, None::<&str>)?;
+    menu.append(&hist_header)?;
+    let mut hist = Vec::new();
+    for i in 0..HISTORY_MENU_ITEMS {
+        let item = MenuItem::with_id(app, format!("hist-{i}"), "—", false, None::<&str>)?;
+        menu.append(&item)?;
+        hist.push(item);
+    }
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+
+    let model_menu = Submenu::with_id(app, "model-menu", "Model", true)?;
+    let mut model_items = Vec::new();
+    for (name, label) in MODEL_CHOICES {
+        let item = CheckMenuItem::with_id(
+            app,
+            format!("model-{name}"),
+            *label,
+            true,
+            false,
+            None::<&str>,
+        )?;
+        model_menu.append(&item)?;
+        model_items.push(item);
+    }
+    let model_custom =
+        CheckMenuItem::with_id(app, "model-custom-slot", "—", false, false, None::<&str>)?;
+    model_menu.append(&model_custom)?;
+    model_menu.append(&PredefinedMenuItem::separator(app)?)?;
+    model_menu.append(&MenuItem::with_id(
+        app,
+        "custom-model",
+        "Custom Model…",
+        true,
+        None::<&str>,
+    )?)?;
+    menu.append(&model_menu)?;
+
+    let hotkey_menu = Submenu::with_id(app, "hotkey-menu", "Hotkey", true)?;
+    let mut hotkey_items = Vec::new();
+    for (accel, label) in HOTKEY_CHOICES {
+        let item = CheckMenuItem::with_id(
+            app,
+            format!("hotkey-{accel}"),
+            *label,
+            true,
+            false,
+            None::<&str>,
+        )?;
+        hotkey_menu.append(&item)?;
+        hotkey_items.push(item);
+    }
+    let hotkey_custom =
+        CheckMenuItem::with_id(app, "hotkey-custom-slot", "—", false, false, None::<&str>)?;
+    hotkey_menu.append(&hotkey_custom)?;
+    hotkey_menu.append(&PredefinedMenuItem::separator(app)?)?;
+    hotkey_menu.append(&MenuItem::with_id(
+        app,
+        "record-hotkey",
+        "Set Custom Hotkey…",
+        true,
+        None::<&str>,
+    )?)?;
+    menu.append(&hotkey_menu)?;
+
+    let theme = MenuItem::with_id(app, "theme", "Icon", true, None::<&str>)?;
+    menu.append(&theme)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(
+        app,
+        "quit",
+        "Quit Gretchen Flow",
+        true,
+        None::<&str>,
+    )?)?;
+
+    Ok(MenuHandles {
+        menu,
+        status,
+        hist_header,
+        hist,
+        model_items,
+        model_custom,
+        hotkey_items,
+        hotkey_custom,
+        theme,
+    })
+}
+
+/// Update the tray menu in place on the main thread.
 fn refresh_menu(app: &AppHandle) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || refresh_menu_on_main(&handle));
 }
 
-/// Rebuild the tray menu, including the latest history entries.
 fn refresh_menu_on_main(app: &AppHandle) {
     let state = app.state::<AppState>();
     let recent = history::recent(HISTORY_MENU_ITEMS);
     let current_shortcut = state.current_shortcut.lock().unwrap().clone();
-    let status_label = format!(
-        "Gretchen Flow — {} ({})",
-        current_shortcut, state.cfg.hotkey_mode
-    );
-    let result = (|| -> tauri::Result<()> {
-        let menu = Menu::new(app)?;
-        menu.append(&MenuItem::with_id(
-            app,
-            "status",
-            &status_label,
-            false,
-            None::<&str>,
-        )?)?;
-        menu.append(&PredefinedMenuItem::separator(app)?)?;
-        if !recent.is_empty() {
-            menu.append(&MenuItem::with_id(
-                app,
-                "hist-header",
-                "Recent — click to type again",
-                false,
-                None::<&str>,
-            )?)?;
-            for (i, text) in recent.iter().enumerate() {
-                let label: String = if text.chars().count() > 45 {
-                    format!("{}…", text.chars().take(45).collect::<String>())
-                } else {
-                    text.clone()
-                };
-                menu.append(&MenuItem::with_id(
-                    app,
-                    format!("hist-{i}"),
-                    label,
-                    true,
-                    None::<&str>,
-                )?)?;
+    let current_model = state.current_model.lock().unwrap().clone();
+    let dark = state.icon_dark.load(Ordering::SeqCst);
+
+    MENU_HANDLES.with(|handles| {
+        let handles = handles.borrow();
+        let Some(h) = handles.as_ref() else { return };
+
+        let _ = h.status.set_text(format!(
+            "Gretchen Flow — {} ({})",
+            current_shortcut, state.cfg.hotkey_mode
+        ));
+
+        let _ = h.hist_header.set_text(if recent.is_empty() {
+            "No dictations yet"
+        } else {
+            "Recent — click to type again"
+        });
+        for (i, item) in h.hist.iter().enumerate() {
+            match recent.get(i) {
+                Some(text) => {
+                    let label: String = if text.chars().count() > 45 {
+                        format!("{}…", text.chars().take(45).collect::<String>())
+                    } else {
+                        text.clone()
+                    };
+                    let _ = item.set_text(label);
+                    let _ = item.set_enabled(true);
+                }
+                None => {
+                    let _ = item.set_text("—");
+                    let _ = item.set_enabled(false);
+                }
             }
-            menu.append(&PredefinedMenuItem::separator(app)?)?;
         }
-        let current_model = state.current_model.lock().unwrap().clone();
-        let model_menu = Submenu::with_id(app, "model-menu", "Model", true)?;
+
         let mut model_listed = false;
-        for (name, label) in MODEL_CHOICES {
+        for ((name, label), item) in MODEL_CHOICES.iter().zip(&h.model_items) {
             let checked = *name == current_model;
             model_listed |= checked;
-            let downloaded = model::model_path(name).exists();
-            let label = if downloaded {
-                format!("{label}  ✓")
+            let text = if model::model_path(name).exists() {
+                (*label).to_string()
             } else {
                 format!("{label}  (needs download)")
             };
-            model_menu.append(&CheckMenuItem::with_id(
-                app,
-                format!("model-{name}"),
-                label,
-                true,
-                checked,
-                None::<&str>,
-            )?)?;
+            let _ = item.set_text(text);
+            let _ = item.set_checked(checked);
         }
-        if !model_listed {
-            // A custom model — show it as the checked entry.
-            model_menu.append(&CheckMenuItem::with_id(
-                app,
-                format!("model-{current_model}"),
-                &current_model,
-                true,
-                true,
-                None::<&str>,
-            )?)?;
+        if model_listed {
+            let _ = h.model_custom.set_text("—");
+            let _ = h.model_custom.set_enabled(false);
+            let _ = h.model_custom.set_checked(false);
+        } else {
+            let _ = h.model_custom.set_text(current_model.clone());
+            let _ = h.model_custom.set_enabled(true);
+            let _ = h.model_custom.set_checked(true);
         }
-        model_menu.append(&PredefinedMenuItem::separator(app)?)?;
-        model_menu.append(&MenuItem::with_id(
-            app,
-            "custom-model",
-            "Custom Model…",
-            true,
-            None::<&str>,
-        )?)?;
-        menu.append(&model_menu)?;
 
-        let hotkey_menu = Submenu::with_id(app, "hotkey-menu", "Hotkey", true)?;
-        let mut current_listed = false;
-        for (accel, label) in HOTKEY_CHOICES {
+        let mut hotkey_listed = false;
+        for ((accel, _), item) in HOTKEY_CHOICES.iter().zip(&h.hotkey_items) {
             let checked = *accel == current_shortcut;
-            current_listed |= checked;
-            hotkey_menu.append(&CheckMenuItem::with_id(
-                app,
-                format!("hotkey-{accel}"),
-                *label,
-                true,
-                checked,
-                None::<&str>,
-            )?)?;
+            hotkey_listed |= checked;
+            let _ = item.set_checked(checked);
         }
-        if !current_listed {
-            // A custom shortcut — show it as the checked entry.
-            hotkey_menu.append(&CheckMenuItem::with_id(
-                app,
-                format!("hotkey-{current_shortcut}"),
-                &current_shortcut,
-                true,
-                true,
-                None::<&str>,
-            )?)?;
+        if hotkey_listed {
+            let _ = h.hotkey_custom.set_text("—");
+            let _ = h.hotkey_custom.set_enabled(false);
+            let _ = h.hotkey_custom.set_checked(false);
+        } else {
+            let _ = h.hotkey_custom.set_text(current_shortcut.clone());
+            let _ = h.hotkey_custom.set_enabled(true);
+            let _ = h.hotkey_custom.set_checked(true);
         }
-        hotkey_menu.append(&PredefinedMenuItem::separator(app)?)?;
-        hotkey_menu.append(&MenuItem::with_id(
-            app,
-            "record-hotkey",
-            "Set Custom Hotkey…",
-            true,
-            None::<&str>,
-        )?)?;
-        menu.append(&hotkey_menu)?;
 
-        let theme_label = if state.icon_dark.load(Ordering::SeqCst) {
+        let _ = h.theme.set_text(if dark {
             "Icon: Dark — switch to Light"
         } else {
             "Icon: Light — switch to Dark"
-        };
-        menu.append(&MenuItem::with_id(
-            app,
-            "theme",
-            theme_label,
-            true,
-            None::<&str>,
-        )?)?;
-        menu.append(&PredefinedMenuItem::separator(app)?)?;
-        menu.append(&MenuItem::with_id(
-            app,
-            "quit",
-            "Quit Gretchen Flow",
-            true,
-            None::<&str>,
-        )?)?;
-        if let Some(tray) = app.tray_by_id(TRAY_ID) {
-            tray.set_menu(Some(menu))?;
-        }
-        Ok(())
-    })();
-    if let Err(e) = result {
-        log::error!("menu refresh failed: {e}");
-    }
+        });
+    });
+
     *state.history_items.lock().unwrap() = recent;
 }
 
@@ -620,6 +673,9 @@ fn on_menu_event(app: &AppHandle, id: &str) {
     if id == "custom-model" {
         open_model_window(app);
         return;
+    }
+    if id == "model-custom-slot" || id == "hotkey-custom-slot" {
+        return; // already-active custom entries — nothing to do
     }
     if let Some(accel) = id.strip_prefix("hotkey-") {
         if accel != "menu" {
@@ -729,11 +785,14 @@ fn main() {
             } else {
                 ICON_IDLE_LIGHT
             };
+            let handles = build_menu(app.handle())?;
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(Image::from_bytes(initial_icon)?)
                 .icon_as_template(!dark)
+                .menu(&handles.menu)
                 .on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()))
                 .build(app)?;
+            MENU_HANDLES.with(|cell| *cell.borrow_mut() = Some(handles));
             refresh_menu(app.handle());
 
             if let Some(shortcut) = shortcut {
