@@ -603,19 +603,21 @@ fn open_main_window(app: &AppHandle) {
         let _ = window.set_focus();
         return;
     }
+    // Native window with an overlay (transparent) title bar: keeps the dark
+    // themed look while giving real traffic-light controls (close / minimize /
+    // fullscreen) and native title-bar dragging.
     let result =
         tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("menu.html".into()))
             .title("Gretchen Flow")
-            .inner_size(440.0, 600.0)
-            .resizable(false)
-            .decorations(false)
-            .transparent(true)
+            .inner_size(440.0, 620.0)
+            .min_inner_size(360.0, 480.0)
+            .resizable(true)
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
             .focused(true)
             .build();
     match result {
         Ok(window) => {
-            // Builder .center() is unreliable for frameless windows — center,
-            // show, and focus explicitly after creation.
             let _ = window.center();
             let _ = window.show();
             let _ = window.set_focus();
