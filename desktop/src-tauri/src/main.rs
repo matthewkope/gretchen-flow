@@ -380,19 +380,37 @@ fn activate_app() {
     }
 }
 
-/// Native file picker: use a Whisper model file from anywhere on disk.
+/// Native, screen-centered open panel for choosing a Whisper model file from
+/// anywhere on disk. Runs on the main thread (where menu events fire) so the
+/// modal panel can present and center correctly for an accessory app.
 fn pick_model_file(app: &AppHandle) {
-    use tauri_plugin_dialog::DialogExt;
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
+    use objc2_foundation::{NSArray, NSString};
+
     activate_app();
-    let handle = app.clone();
-    app.dialog()
-        .file()
-        .add_filter("Whisper model", &["bin", "gguf"])
-        .pick_file(move |file| {
-            if let Some(path) = file.and_then(|f| f.into_path().ok()) {
-                set_model(&handle, &path.to_string_lossy());
+    let Some(mtm) = MainThreadMarker::new() else {
+        log::error!("model picker must run on the main thread");
+        return;
+    };
+
+    let panel = NSOpenPanel::openPanel(mtm);
+    panel.setCanChooseFiles(true);
+    panel.setCanChooseDirectories(false);
+    panel.setAllowsMultipleSelection(false);
+    let exts =
+        NSArray::from_retained_slice(&[NSString::from_str("bin"), NSString::from_str("gguf")]);
+    #[allow(deprecated)] // setAllowedContentTypes needs UTType; extensions are simpler here
+    panel.setAllowedFileTypes(Some(&exts));
+    panel.center();
+
+    if panel.runModal() == NSModalResponseOK {
+        if let Some(url) = panel.URLs().firstObject() {
+            if let Some(path) = url.path() {
+                set_model(app, &path.to_string());
             }
-        });
+        }
+    }
 }
 
 /// Open (or focus) the custom model input window.
@@ -894,7 +912,6 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             apply_custom_hotkey,
             cancel_custom_hotkey,
