@@ -1132,6 +1132,8 @@ fn load_engine_async(app: AppHandle) {
                 set_tray_state(&app, TrayState::Error);
             }
         }
+        // Update the menu/window now that the engine state has settled.
+        refresh_menu(&app);
     });
 }
 
