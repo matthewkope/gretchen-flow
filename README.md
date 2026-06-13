@@ -90,6 +90,10 @@ When the arrow disappears:
 - `vocabulary`: words and phrases (names, jargon, brands) that recognition is
   biased toward, so they come out spelled the way you wrote them
 
+Most settings can also be changed from the tray menu (model, hotkey, icon
+theme). After hand-editing `config.json`, choose **Reload Config** from the
+tray menu to apply every change live — no restart needed.
+
 Dictation history is saved to `~/Library/Application Support/gretchen-flow/history.jsonl`;
 the five most recent entries appear in the tray menu — click one to type it again.
 

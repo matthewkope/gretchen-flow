@@ -50,7 +50,8 @@ struct AppState {
     fn_hotkey: AtomicBool,
     /// The active Whisper model name (changeable from the menu).
     current_model: Mutex<String>,
-    cfg: config::Config,
+    /// Live config; replaced wholesale by "Reload Config".
+    cfg: Mutex<config::Config>,
     /// Full texts behind the tray's "Recent" items, newest first.
     history_items: Mutex<Vec<String>>,
 }
@@ -460,7 +461,7 @@ fn cancel_custom_hotkey(app: AppHandle) {
 
 fn on_shortcut(app: &AppHandle, state_event: ShortcutState) {
     let state = app.state::<AppState>();
-    let hold_mode = state.cfg.hotkey_mode == "hold";
+    let hold_mode = state.cfg.lock().unwrap().hotkey_mode == "hold";
     let recording = state.recording.load(Ordering::SeqCst);
 
     match state_event {
@@ -592,6 +593,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<MenuHandles> {
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(
         app,
+        "reload-config",
+        "Reload Config",
+        true,
+        None::<&str>,
+    )?)?;
+    menu.append(&MenuItem::with_id(
+        app,
         "quit",
         "Quit Gretchen Flow",
         true,
@@ -622,6 +630,7 @@ fn refresh_menu_on_main(app: &AppHandle) {
     let recent = history::recent(HISTORY_MENU_ITEMS);
     let current_shortcut = state.current_shortcut.lock().unwrap().clone();
     let current_model = state.current_model.lock().unwrap().clone();
+    let hotkey_mode = state.cfg.lock().unwrap().hotkey_mode.clone();
     let dark = state.icon_dark.load(Ordering::SeqCst);
 
     MENU_HANDLES.with(|handles| {
@@ -629,8 +638,7 @@ fn refresh_menu_on_main(app: &AppHandle) {
         let Some(h) = handles.as_ref() else { return };
 
         let _ = h.status.set_text(format!(
-            "Gretchen Flow — {} ({})",
-            current_shortcut, state.cfg.hotkey_mode
+            "Gretchen Flow — {current_shortcut} ({hotkey_mode})"
         ));
 
         let _ = h.hist_header.set_text(if recent.is_empty() {
@@ -723,6 +731,10 @@ fn on_menu_event(app: &AppHandle, id: &str) {
         pick_model_file(app);
         return;
     }
+    if id == "reload-config" {
+        reload_config(app);
+        return;
+    }
     if id == "theme" {
         toggle_icon_theme(app);
         return;
@@ -779,7 +791,7 @@ fn load_engine_async(app: AppHandle) {
     std::thread::spawn(move || {
         set_tray_state(&app, TrayState::Downloading);
         let state = app.state::<AppState>();
-        let cfg = state.cfg.clone();
+        let cfg = state.cfg.lock().unwrap().clone();
         let loaded = model::ensure_model(&cfg.model)
             .and_then(|path| transcribe::Engine::load(&path.to_string_lossy(), &cfg));
         match loaded {
@@ -794,6 +806,63 @@ fn load_engine_async(app: AppHandle) {
             }
         }
     });
+}
+
+/// Force-reload the transcription engine from the current config, keeping the
+/// existing engine until the new one is ready. Picks up model and
+/// transcription-setting changes (language, vocabulary, punctuation, etc.).
+fn reload_engine(app: AppHandle, model: String) {
+    std::thread::spawn(move || {
+        set_tray_state(&app, TrayState::Downloading);
+        let cfg = config::Config::load();
+        let loaded = model::ensure_model(&model)
+            .and_then(|path| transcribe::Engine::load(&path.to_string_lossy(), &cfg));
+        let state = app.state::<AppState>();
+        match loaded {
+            Ok(engine) => {
+                *state.engine.lock().unwrap() = Some(engine);
+                log::info!("engine reloaded (model: {model})");
+            }
+            Err(e) => log::error!("engine reload failed, keeping current engine: {e}"),
+        }
+        set_tray_state(&app, TrayState::Idle);
+    });
+}
+
+/// Menu action: re-read config.json and apply everything live — hotkey,
+/// icon theme, model, and transcription settings — without restarting.
+fn reload_config(app: &AppHandle) {
+    let fresh = config::Config::load();
+    let state = app.state::<AppState>();
+
+    // Re-register the hotkey if it changed.
+    let current_shortcut = state.current_shortcut.lock().unwrap().clone();
+    if fresh.shortcut != current_shortcut {
+        if let Err(e) = set_hotkey(app, &fresh.shortcut) {
+            log::error!("reload config: {e}");
+        }
+    }
+
+    // Apply the icon theme if it changed.
+    let want_dark = fresh.icon_theme != "light";
+    if want_dark != state.icon_dark.load(Ordering::SeqCst) {
+        state.icon_dark.store(want_dark, Ordering::SeqCst);
+        if !state.recording.load(Ordering::SeqCst) {
+            set_tray_state(app, TrayState::Idle);
+        }
+    }
+
+    // Swap in the new config (covers hotkey_mode and any future fields).
+    let model = fresh.model.clone();
+    *state.cfg.lock().unwrap() = fresh;
+    *state.current_model.lock().unwrap() = model.clone();
+
+    refresh_menu(app);
+    log::info!("config reloaded");
+
+    // Always reload the engine so language/vocabulary/punctuation edits apply
+    // even when the model name is unchanged.
+    reload_engine(app.clone(), model);
 }
 
 fn main() {
@@ -840,7 +909,7 @@ fn main() {
             current_shortcut: Mutex::new(cfg.shortcut.clone()),
             fn_hotkey: AtomicBool::new(cfg.shortcut == FN_HOTKEY),
             current_model: Mutex::new(cfg.model.clone()),
-            cfg,
+            cfg: Mutex::new(cfg),
             history_items: Mutex::new(Vec::new()),
         })
         .setup(move |app| {
