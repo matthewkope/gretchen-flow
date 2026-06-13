@@ -1,6 +1,6 @@
 cask "gretchen-flow" do
-  version "0.2.0"
-  sha256 "7d036c6ba648eaa469f2d69ded76ea215f6127e7465dbe24a7c274278c5de20f"
+  version "0.2.1"
+  sha256 "be2669f63f8cdeb6b791397acd3c6245c2f29bf778321627f40030439fb63467"
 
   url "https://github.com/matthewkope/gretchen-flow/releases/download/v#{version}/Gretchen.Flow_#{version}_aarch64.dmg"
   name "Gretchen Flow"
