@@ -427,6 +427,192 @@ fn pick_model_file(app: &AppHandle) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Standalone NES-style window mirroring the tray menu
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct MenuChoice {
+    id: String,
+    label: String,
+    active: bool,
+    note: String,
+}
+
+#[derive(serde::Serialize)]
+struct MenuState {
+    has_engine: bool,
+    status: String,
+    icon_dark: bool,
+    models: Vec<MenuChoice>,
+    custom_model: Option<String>,
+    hotkeys: Vec<MenuChoice>,
+    custom_hotkey: Option<String>,
+    recent: Vec<String>,
+}
+
+/// Snapshot of everything the window renders.
+#[tauri::command]
+fn menu_state(app: AppHandle) -> MenuState {
+    let state = app.state::<AppState>();
+    let current_model = state.current_model.lock().unwrap().clone();
+    let current_shortcut = state.current_shortcut.lock().unwrap().clone();
+    let hotkey_mode = state.cfg.lock().unwrap().hotkey_mode.clone();
+    let has_engine = state.engine.lock().unwrap().is_some();
+    let recent = history::recent(HISTORY_MENU_ITEMS);
+
+    let models = MODEL_CHOICES
+        .iter()
+        .map(|(name, label)| MenuChoice {
+            id: (*name).to_string(),
+            label: (*label).to_string(),
+            active: *name == current_model,
+            note: if model::model_path(name).exists() {
+                String::new()
+            } else {
+                "needs download".to_string()
+            },
+        })
+        .collect();
+    let model_listed = MODEL_CHOICES.iter().any(|(n, _)| *n == current_model);
+    let custom_model = if model_listed || current_model.is_empty() {
+        None
+    } else if current_model.starts_with('/') {
+        std::path::Path::new(&current_model)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+    } else {
+        Some(current_model.clone())
+    };
+
+    let hotkeys = HOTKEY_CHOICES
+        .iter()
+        .map(|(accel, label)| MenuChoice {
+            id: (*accel).to_string(),
+            label: (*label).to_string(),
+            active: *accel == current_shortcut,
+            note: String::new(),
+        })
+        .collect();
+    let hotkey_listed = HOTKEY_CHOICES.iter().any(|(a, _)| *a == current_shortcut);
+    let custom_hotkey = if hotkey_listed {
+        None
+    } else {
+        Some(current_shortcut.clone())
+    };
+
+    MenuState {
+        has_engine,
+        status: if has_engine {
+            format!("READY · {current_shortcut} · {hotkey_mode}")
+        } else {
+            "NO MODEL — PICK ONE BELOW".to_string()
+        },
+        icon_dark: state.icon_dark.load(Ordering::SeqCst),
+        models,
+        custom_model,
+        hotkeys,
+        custom_hotkey,
+        recent,
+    }
+}
+
+#[tauri::command]
+fn menu_choose_model(app: AppHandle, name: String) {
+    set_model(&app, &name);
+}
+
+#[tauri::command]
+fn menu_model_from_file(app: AppHandle) {
+    pick_model_file(&app);
+}
+
+#[tauri::command]
+fn menu_custom_model(app: AppHandle) {
+    open_model_window(&app);
+}
+
+#[tauri::command]
+fn menu_choose_hotkey(app: AppHandle, accel: String) -> Result<(), String> {
+    set_hotkey(&app, &accel)
+}
+
+#[tauri::command]
+fn menu_record_hotkey(app: AppHandle) {
+    open_hotkey_window(&app);
+}
+
+#[tauri::command]
+fn menu_toggle_theme(app: AppHandle) {
+    toggle_icon_theme(&app);
+}
+
+#[tauri::command]
+fn menu_reload_config(app: AppHandle) {
+    reload_config(&app);
+}
+
+#[tauri::command]
+fn menu_open_setup(app: AppHandle) {
+    open_setup_window(&app);
+}
+
+#[tauri::command]
+fn menu_type_recent(index: usize) {
+    let recent = history::recent(HISTORY_MENU_ITEMS);
+    if let Some(text) = recent.get(index).cloned() {
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            if let Err(e) = inject::type_text(&text) {
+                log::error!("{e}");
+            }
+        });
+    }
+}
+
+#[tauri::command]
+fn menu_quit(app: AppHandle) {
+    app.exit(0);
+}
+
+/// Open (or focus) the standalone NES-style main window. Stays a menu-bar
+/// (Accessory) app — no Dock icon — and surfaces the window explicitly with
+/// show()/set_focus() after centering it.
+fn open_main_window(app: &AppHandle) {
+    activate_app();
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let result =
+        tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("menu.html".into()))
+            .title("Gretchen Flow")
+            .inner_size(440.0, 600.0)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .focused(true)
+            .build();
+    match result {
+        Ok(window) => {
+            // Builder .center() is unreliable for frameless windows — center,
+            // show, and focus explicitly after creation.
+            let _ = window.center();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        Err(e) => log::error!("couldn't open main window: {e}"),
+    }
+}
+
+#[tauri::command]
+fn menu_close(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.close();
+    }
+}
+
 /// Show the first-run / setup guide on the main thread.
 fn show_setup(app: &AppHandle) {
     let handle = app.clone();
@@ -666,6 +852,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<MenuHandles> {
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(
         app,
+        "open-window",
+        "Open Gretchen Flow…",
+        true,
+        None::<&str>,
+    )?)?;
+    menu.append(&MenuItem::with_id(
+        app,
         "setup",
         "Getting Started…",
         true,
@@ -803,6 +996,10 @@ fn refresh_menu_on_main(app: &AppHandle) {
     });
 
     *state.history_items.lock().unwrap() = recent;
+
+    // Keep the standalone window in sync if it's open.
+    use tauri::Emitter;
+    let _ = app.emit("menu-updated", ());
 }
 
 fn on_menu_event(app: &AppHandle, id: &str) {
@@ -821,6 +1018,10 @@ fn on_menu_event(app: &AppHandle, id: &str) {
     }
     if id == "setup" {
         show_setup(app);
+        return;
+    }
+    if id == "open-window" {
+        open_main_window(app);
         return;
     }
     if id == "theme" {
@@ -1006,7 +1207,19 @@ fn main() {
             apply_custom_model,
             cancel_custom_model,
             download_recommended_model,
-            close_setup
+            close_setup,
+            menu_state,
+            menu_choose_model,
+            menu_model_from_file,
+            menu_custom_model,
+            menu_choose_hotkey,
+            menu_record_hotkey,
+            menu_toggle_theme,
+            menu_reload_config,
+            menu_open_setup,
+            menu_type_recent,
+            menu_quit,
+            menu_close
         ])
         .manage(AppState {
             recorder: audio::Recorder::spawn(),
@@ -1050,7 +1263,7 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Gretchen Flow")
-        .run(|_app, event| match event {
+        .run(|app, event| match event {
             // Keep running with zero windows; only exit via the Quit menu item.
             tauri::RunEvent::ExitRequested { code, api, .. } => {
                 log::info!("exit requested (code: {code:?})");
@@ -1058,6 +1271,9 @@ fn main() {
                     api.prevent_exit();
                 }
             }
+            // Clicking the app icon (Finder/Dock/Launchpad) while it's already
+            // running re-opens the standalone window.
+            tauri::RunEvent::Reopen { .. } => open_main_window(app),
             tauri::RunEvent::Exit => log::info!("exiting"),
             _ => {}
         });
