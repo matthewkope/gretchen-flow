@@ -31,13 +31,13 @@ editor, browser, chat, anywhere.
 
 ## Install with Homebrew
 
-Apple Silicon Mac, macOS 12+:
+Apple Silicon Mac, macOS 12+ — one command (it taps and installs):
 
 ```bash
-brew tap matthewkope/gretchen-flow
-brew trust matthewkope/gretchen-flow   # Homebrew requires trusting any third-party cask tap
-brew install --cask gretchen-flow
+brew install --cask matthewkope/gretchen-flow/gretchen-flow
 ```
+
+To update later: `brew upgrade --cask gretchen-flow`.
 
 > The cask installs from the latest [GitHub Release](https://github.com/matthewkope/gretchen-flow/releases).
 > Builds are not yet notarized — if macOS blocks the app on first launch, run
