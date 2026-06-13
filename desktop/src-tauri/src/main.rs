@@ -878,13 +878,6 @@ fn build_menu(app: &AppHandle) -> tauri::Result<MenuHandles> {
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(
         app,
-        "open-window",
-        "Open Gretchen Flow…",
-        true,
-        None::<&str>,
-    )?)?;
-    menu.append(&MenuItem::with_id(
-        app,
         "setup",
         "Getting Started…",
         true,
@@ -1044,10 +1037,6 @@ fn on_menu_event(app: &AppHandle, id: &str) {
     }
     if id == "setup" {
         show_setup(app);
-        return;
-    }
-    if id == "open-window" {
-        open_main_window(app);
         return;
     }
     if id == "theme" {
