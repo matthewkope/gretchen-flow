@@ -173,8 +173,12 @@
           s.recent.forEach((text, i) => {
             const short = text.length > 40 ? text.slice(0, 40) + "…" : text;
             recent.appendChild(row({
-              label: short, active: false, note: "type",
-              onclick: () => invoke("menu_type_recent", { index: i }),
+              label: short, active: false, note: "copy",
+              onclick: (e) => {
+                invoke("menu_copy_recent", { index: i });
+                const n = e.currentTarget.querySelector(".note");
+                if (n) { n.textContent = "copied!"; setTimeout(() => { n.textContent = "copy"; }, 1000); }
+              },
             }));
           });
         }

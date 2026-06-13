@@ -575,16 +575,22 @@ fn menu_open_setup(app: AppHandle) {
     open_setup_window(&app);
 }
 
+/// Copy a recent transcription to the system clipboard.
 #[tauri::command]
-fn menu_type_recent(index: usize) {
+fn menu_copy_recent(index: usize) {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+    use objc2_foundation::NSString;
     let recent = history::recent(HISTORY_MENU_ITEMS);
-    if let Some(text) = recent.get(index).cloned() {
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            if let Err(e) = inject::type_text(&text) {
-                log::error!("{e}");
-            }
-        });
+    let Some(text) = recent.get(index) else {
+        return;
+    };
+    let pasteboard = NSPasteboard::generalPasteboard();
+    pasteboard.clearContents();
+    let ok = unsafe {
+        pasteboard.setString_forType(&NSString::from_str(text), NSPasteboardTypeString)
+    };
+    if !ok {
+        log::error!("failed to copy recent dictation to clipboard");
     }
 }
 
@@ -1239,7 +1245,7 @@ fn main() {
             menu_toggle_theme,
             menu_reload_config,
             menu_open_setup,
-            menu_type_recent,
+            menu_copy_recent,
             menu_quit,
             menu_close
         ])
