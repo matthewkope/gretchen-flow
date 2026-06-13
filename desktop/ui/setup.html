@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Welcome to Gretchen Flow</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        margin: 0; padding: 28px 32px; line-height: 1.5;
+        user-select: none; -webkit-user-select: none;
+      }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .sub { opacity: 0.6; font-size: 13px; margin: 0 0 20px; }
+      ol { padding-left: 20px; margin: 0 0 20px; }
+      li { margin-bottom: 14px; font-size: 13px; }
+      b { font-weight: 600; }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px; background: rgba(127,127,127,0.18);
+        padding: 1px 5px; border-radius: 4px;
+      }
+      .hint { opacity: 0.6; font-size: 12px; }
+      .row { display: flex; gap: 10px; align-items: center; }
+      button {
+        font-size: 13px; padding: 8px 16px; border-radius: 8px;
+        border: 1px solid rgba(127, 127, 127, 0.4); background: transparent;
+        color: inherit; cursor: pointer;
+      }
+      button.primary { background: #0a84ff; border-color: #0a84ff; color: white; font-weight: 600; }
+      #status { font-size: 12px; opacity: 0.7; min-height: 16px; }
+    </style>
+  </head>
+  <body>
+    <h1>👋 Welcome to Gretchen Flow</h1>
+    <p class="sub">Press a hotkey, speak, and your words appear wherever your cursor is.</p>
+
+    <ol>
+      <li>
+        <b>Download a speech model.</b> Gretchen ships without one so you can
+        choose. The recommended model is <b>Large v3 Turbo (quantized)</b> —
+        about <b>547&nbsp;MB</b>, the best balance of accuracy and speed.
+        Click the button below, or pick any model from the menu bar icon’s
+        <b>Model</b> submenu. The Gretchen icon shows a <code>↓</code> while it
+        downloads.
+      </li>
+      <li>
+        <b>Grant macOS permissions.</b> On first use you’ll be asked for
+        <b>Microphone</b> (to hear you) and <b>Accessibility</b> (to type the
+        text into other apps). Approve both in
+        <code>System&nbsp;Settings ▸ Privacy &amp; Security</code>.
+      </li>
+      <li>
+        <b>Dictate.</b> Hold your hotkey (default
+        <code>Control + Option + Space</code>), speak, then release — your
+        words type out where the cursor is. Change the hotkey anytime from the
+        menu’s <b>Hotkey</b> submenu.
+        <div class="hint">Tip: to use the <b>🌐 Globe/Fn</b> key, also set
+        <code>System Settings ▸ Keyboard ▸ Press 🌐 to: Do Nothing</code>.</div>
+      </li>
+    </ol>
+
+    <p id="status"></p>
+    <div class="row">
+      <button id="download" class="primary">Download Recommended Model (547&nbsp;MB)</button>
+      <button id="close">I’ll choose from the menu</button>
+    </div>
+
+    <script>
+      const { invoke } = window.__TAURI__.core;
+      const status = document.getElementById("status");
+      const download = document.getElementById("download");
+      download.onclick = () => {
+        status.textContent = "Downloading… you can close this window; the menu bar icon shows ↓ while it works.";
+        download.disabled = true;
+        invoke("download_recommended_model");
+      };
+      document.getElementById("close").onclick = () => invoke("close_setup");
+    </script>
+  </body>
+</html>

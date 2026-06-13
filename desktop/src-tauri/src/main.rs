@@ -35,6 +35,7 @@ enum TrayState {
     Idle,
     Recording,
     Transcribing,
+    NeedsModel,
     Error,
 }
 
@@ -59,6 +60,9 @@ struct AppState {
 /// Special hotkey value: the Fn/Globe key, watched by a low-level listener
 /// because macOS can't register it as a normal shortcut.
 const FN_HOTKEY: &str = "Fn";
+
+/// The model recommended to first-time users (best accuracy/size balance).
+const RECOMMENDED_MODEL: &str = "large-v3-turbo-q5_0";
 
 /// Whisper model choices offered in the tray menu: (ggml name, display label).
 const MODEL_CHOICES: &[(&str, &str)] = &[
@@ -115,6 +119,7 @@ fn set_tray_state_on_main(app: &AppHandle, state: TrayState) {
         TrayState::Downloading => (idle, idle_template, Some("↓")),
         TrayState::Recording => (ICON_RECORDING, false, None),
         TrayState::Transcribing => (ICON_TRANSCRIBING, false, None),
+        TrayState::NeedsModel => (idle, idle_template, Some("!")),
         TrayState::Error => (idle, idle_template, Some("✕")),
     };
     let _ = tray.set_icon(Image::from_bytes(bytes).ok());
@@ -127,7 +132,8 @@ fn set_tray_state_on_main(app: &AppHandle, state: TrayState) {
 fn start_recording(app: &AppHandle) {
     let state = app.state::<AppState>();
     if state.engine.lock().unwrap().is_none() {
-        log::warn!("model not loaded yet; ignoring hotkey");
+        log::warn!("no model loaded; opening setup");
+        show_setup(app);
         return;
     }
     state.recording.store(true, Ordering::SeqCst);
@@ -308,7 +314,9 @@ fn set_model(app: &AppHandle, name: &str) {
     let state = app.state::<AppState>();
     let previous = {
         let mut current = state.current_model.lock().unwrap();
-        if *current == name {
+        // Skip only if this model is already active and loaded; otherwise
+        // (re)load so a missing/never-downloaded model still gets fetched.
+        if *current == name && state.engine.lock().unwrap().is_some() {
             return;
         }
         let previous = current.clone();
@@ -339,10 +347,16 @@ fn set_model(app: &AppHandle, name: &str) {
                 let mut cfg = config::Config::load();
                 cfg.model = previous;
                 cfg.save();
-                refresh_menu(&app);
             }
         }
-        set_tray_state(&app, TrayState::Idle);
+        // Reflect the result: ready, or still no model.
+        let idle = if state.engine.lock().unwrap().is_some() {
+            TrayState::Idle
+        } else {
+            TrayState::NeedsModel
+        };
+        set_tray_state(&app, idle);
+        refresh_menu(&app);
     });
 }
 
@@ -410,6 +424,47 @@ fn pick_model_file(app: &AppHandle) {
                 set_model(app, &path.to_string());
             }
         }
+    }
+}
+
+/// Show the first-run / setup guide on the main thread.
+fn show_setup(app: &AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || open_setup_window(&handle));
+}
+
+/// Open (or focus) the setup window explaining how to download a model and
+/// grant permissions.
+fn open_setup_window(app: &AppHandle) {
+    activate_app();
+    if let Some(window) = app.get_webview_window("setup") {
+        let _ = window.set_focus();
+        return;
+    }
+    let result =
+        tauri::WebviewWindowBuilder::new(app, "setup", tauri::WebviewUrl::App("setup.html".into()))
+            .title("Welcome to Gretchen Flow")
+            .inner_size(520.0, 580.0)
+            .resizable(false)
+            .center()
+            .build();
+    if let Err(e) = result {
+        log::error!("couldn't open setup window: {e}");
+    }
+}
+
+#[tauri::command]
+fn download_recommended_model(app: AppHandle) {
+    set_model(&app, RECOMMENDED_MODEL);
+    if let Some(window) = app.get_webview_window("setup") {
+        let _ = window.close();
+    }
+}
+
+#[tauri::command]
+fn close_setup(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("setup") {
+        let _ = window.close();
     }
 }
 
@@ -611,6 +666,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<MenuHandles> {
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(
         app,
+        "setup",
+        "Getting Started…",
+        true,
+        None::<&str>,
+    )?)?;
+    menu.append(&MenuItem::with_id(
+        app,
         "reload-config",
         "Reload Config",
         true,
@@ -649,15 +711,18 @@ fn refresh_menu_on_main(app: &AppHandle) {
     let current_shortcut = state.current_shortcut.lock().unwrap().clone();
     let current_model = state.current_model.lock().unwrap().clone();
     let hotkey_mode = state.cfg.lock().unwrap().hotkey_mode.clone();
+    let has_engine = state.engine.lock().unwrap().is_some();
     let dark = state.icon_dark.load(Ordering::SeqCst);
 
     MENU_HANDLES.with(|handles| {
         let handles = handles.borrow();
         let Some(h) = handles.as_ref() else { return };
 
-        let _ = h.status.set_text(format!(
-            "Gretchen Flow — {current_shortcut} ({hotkey_mode})"
-        ));
+        let _ = h.status.set_text(if has_engine {
+            format!("Gretchen Flow — {current_shortcut} ({hotkey_mode})")
+        } else {
+            "No model — open Model ▸ to download one".to_string()
+        });
 
         let _ = h.hist_header.set_text(if recent.is_empty() {
             "No dictations yet"
@@ -694,7 +759,8 @@ fn refresh_menu_on_main(app: &AppHandle) {
             let _ = item.set_text(text);
             let _ = item.set_checked(checked);
         }
-        if model_listed {
+        if model_listed || current_model.is_empty() {
+            // No custom model in use (or none selected at all).
             let _ = h.model_custom.set_text("—");
             let _ = h.model_custom.set_enabled(false);
             let _ = h.model_custom.set_checked(false);
@@ -753,6 +819,10 @@ fn on_menu_event(app: &AppHandle, id: &str) {
         reload_config(app);
         return;
     }
+    if id == "setup" {
+        show_setup(app);
+        return;
+    }
     if id == "theme" {
         toggle_icon_theme(app);
         return;
@@ -805,11 +875,29 @@ fn on_menu_event(app: &AppHandle, id: &str) {
     }
 }
 
+/// Load the configured model on startup IF it's already on disk. The app
+/// ships with no model and never auto-downloads — a missing model opens the
+/// setup guide instead.
 fn load_engine_async(app: AppHandle) {
     std::thread::spawn(move || {
-        set_tray_state(&app, TrayState::Downloading);
         let state = app.state::<AppState>();
         let cfg = state.cfg.lock().unwrap().clone();
+
+        let available = if cfg.model.is_empty() {
+            false
+        } else if cfg.model.starts_with('/') {
+            std::path::Path::new(&cfg.model).exists()
+        } else {
+            model::model_path(&cfg.model).exists()
+        };
+        if !available {
+            log::info!("no model downloaded yet; opening setup");
+            set_tray_state(&app, TrayState::NeedsModel);
+            show_setup(&app);
+            return;
+        }
+
+        set_tray_state(&app, TrayState::Downloading);
         let loaded = model::ensure_model(&cfg.model)
             .and_then(|path| transcribe::Engine::load(&path.to_string_lossy(), &cfg));
         match loaded {
@@ -916,7 +1004,9 @@ fn main() {
             apply_custom_hotkey,
             cancel_custom_hotkey,
             apply_custom_model,
-            cancel_custom_model
+            cancel_custom_model,
+            download_recommended_model,
+            close_setup
         ])
         .manage(AppState {
             recorder: audio::Recorder::spawn(),

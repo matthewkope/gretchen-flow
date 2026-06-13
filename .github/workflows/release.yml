@@ -1,0 +1,38 @@
+name: Release
+
+# Cut a release by pushing a version tag, e.g.:
+#   git tag v0.2.0 && git push origin v0.2.0
+# This builds the macOS app bundle + .dmg and attaches it to a GitHub Release,
+# which is what the Homebrew cask downloads.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14 # Apple Silicon
+    defaults:
+      run:
+        working-directory: desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Install build tools
+        run: |
+          brew install cmake
+          cargo install tauri-cli --version "^2" --locked
+      - name: Build app + DMG
+        run: cargo tauri build
+      - name: Publish release with DMG
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          fail_on_unmatched_files: true
+          generate_release_notes: true

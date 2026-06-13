@@ -29,7 +29,20 @@ editor, browser, chat, anywhere.
 | [`python/`](python/) | The original Python prototype (still works; great for experimenting with models) |
 | [`docs/`](docs/) | Architecture and design decisions |
 
-## Quick start (desktop app)
+## Install with Homebrew
+
+Apple Silicon Mac, macOS 12+:
+
+```bash
+brew tap matthewkope/gretchen-flow https://github.com/matthewkope/gretchen-flow
+brew install --cask gretchen-flow
+```
+
+> The cask installs from the latest [GitHub Release](https://github.com/matthewkope/gretchen-flow/releases).
+> Builds are not yet notarized — if macOS blocks the app on first launch, run
+> `xattr -dr com.apple.quarantine "/Applications/Gretchen Flow.app"`.
+
+## Build from source
 
 Requires [Rust](https://rustup.rs) and cmake (`brew install cmake`).
 
@@ -39,20 +52,31 @@ cd gretchen-flow/desktop/src-tauri
 cargo run
 ```
 
-**Gretchen** appears in your menu bar. The first run downloads the Whisper
-model (~574 MB for the default `large-v3-turbo-q5_0`), shown with a **↓**.
-When the arrow disappears:
+## First run — download a model
 
-1. Click into any text field
-2. **Hold Ctrl+Option+Space** — Gretchen lights up red while she listens
-3. Speak, then **let go** — she turns amber while transcribing, then your
-   words are typed where your cursor is
+**Gretchen Flow ships with no speech model**, so you pick the one you want.
+On first launch a **setup window** opens (the menu bar icon shows a small **!**
+until a model is ready). To get going:
+
+1. Click **Download Recommended Model (547 MB)** in the setup window — or open
+   the menu bar icon's **Model** submenu and choose one. The recommended
+   **Large v3 Turbo (quantized)** is the best balance of accuracy and size.
+   The Gretchen icon shows a **↓** while it downloads.
+2. **Grant permissions** when macOS prompts: **Microphone** (to hear you) and
+   **Accessibility** (to type the text). Both are under
+   System Settings ▸ Privacy & Security.
+3. **Dictate:** click into any text field, **hold Ctrl+Option+Space** —
+   Gretchen lights up while she listens — then **let go**; your words type out
+   where the cursor is.
+
+You can reopen the guide anytime from the menu's **Getting Started…** item.
 
 | Menu bar (Gretchen icon) | Meaning |
 |---|---|
 | monochrome | idle, ready |
-| with ↓ | downloading the model (first run) |
-| **red, glowing** | recording — release the keys to finish |
+| with ! | no model yet — open the setup guide / Model menu |
+| with ↓ | downloading a model |
+| **red/amber, glowing** | recording — release the keys to finish |
 | **amber** | transcribing |
 | with ✕ | model failed to load (check the log) |
 
@@ -73,9 +97,12 @@ When the arrow disappears:
 }
 ```
 
-- `model`: any ggml model from [whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp)
-  — `large-v3-turbo-q5_0` (default: near-flagship accuracy, ~574 MB),
-  `large-v3-turbo` (~1.6 GB), `small` (~466 MB, fast/lighter), `base` (~142 MB)
+- `model`: empty on a fresh install (pick one from the **Model** menu, which
+  downloads it). Accepts any ggml model name from
+  [whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp) —
+  `large-v3-turbo-q5_0` (recommended, ~547 MB), `large-v3-turbo` (~1.6 GB),
+  `small` (~466 MB), `base` (~142 MB) — or an absolute path to a local
+  `.bin`/`.gguf` model file (also selectable via **Model ▸ Model from File…**)
 - `hotkey_mode`: `"hold"` (push-to-talk — records while held, default) or `"toggle"` (tap to start/stop)
 - `shortcut`: any [Tauri accelerator](https://v2.tauri.app/learn/global-shortcut/), e.g. `"Cmd+Shift+D"` —
   or just pick one from the tray menu's **Hotkey** submenu (takes effect

@@ -8,7 +8,9 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// ggml model name from ggerganov/whisper.cpp, e.g. "small", "large-v3-turbo".
+    /// ggml model name from ggerganov/whisper.cpp (e.g. "large-v3-turbo-q5_0")
+    /// or an absolute path to a model file. Empty on a fresh install — the app
+    /// ships with no model and guides the user to download one.
     pub model: String,
     /// Language code, or "auto" to detect.
     pub language: String,
@@ -39,7 +41,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             // Quantized large-v3-turbo: near-flagship accuracy at ~574 MB.
-            model: "large-v3-turbo-q5_0".into(),
+            model: String::new(),
             language: "en".into(),
             shortcut: "Ctrl+Alt+Space".into(),
             hotkey_mode: "hold".into(),
