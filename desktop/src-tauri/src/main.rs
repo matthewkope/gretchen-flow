@@ -24,6 +24,7 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 const TRAY_ID: &str = "gf";
+const ICON_APP: &[u8] = include_bytes!("../icons/icon.png");
 const ICON_IDLE_DARK: &[u8] = include_bytes!("../icons/tray/idle.png");
 const ICON_IDLE_LIGHT: &[u8] = include_bytes!("../icons/tray/idle-light.png");
 const ICON_RECORDING: &[u8] = include_bytes!("../icons/tray/recording.png");
@@ -391,6 +392,23 @@ fn activate_app() {
         let ns_app = NSApplication::sharedApplication(mtm);
         #[allow(deprecated)]
         ns_app.activateIgnoringOtherApps(true);
+    }
+}
+
+/// Set the Dock icon to the Gretchen artwork at runtime, so it's never the
+/// generic executable icon (e.g. in dev builds, or before the bundle icon
+/// is associated). Main thread only.
+fn set_dock_icon() {
+    use objc2::{AllocAnyThread, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSData;
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let data = NSData::with_bytes(ICON_APP);
+    if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
+        let ns_app = NSApplication::sharedApplication(mtm);
+        unsafe { ns_app.setApplicationIconImage(Some(&image)) };
     }
 }
 
@@ -1233,8 +1251,13 @@ fn main() {
             history_items: Mutex::new(Vec::new()),
         })
         .setup(move |app| {
+            // Regular app: appears in the Dock (clicking it opens the window),
+            // and also keeps a menu-bar tray icon for recording status.
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            {
+                app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                set_dock_icon();
+            }
 
             let dark = app.state::<AppState>().icon_dark.load(Ordering::SeqCst);
             let initial_icon = if dark {
