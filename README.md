@@ -34,7 +34,8 @@ editor, browser, chat, anywhere.
 Apple Silicon Mac, macOS 12+:
 
 ```bash
-brew tap matthewkope/gretchen-flow https://github.com/matthewkope/gretchen-flow
+brew tap matthewkope/gretchen-flow
+brew trust matthewkope/gretchen-flow   # Homebrew requires trusting any third-party cask tap
 brew install --cask gretchen-flow
 ```
 
