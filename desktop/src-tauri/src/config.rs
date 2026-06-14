@@ -1,6 +1,7 @@
 //! User configuration, shared with the Python prototype at
-//! `~/.config/gretchen-flow/config.json`. The desktop app uses the `shortcut`
-//! key (Tauri accelerator syntax); the Python app's `hotkey` key is left alone.
+//! `~/.config/gretchen-flow/config.json`. The desktop app uses the `shortcuts`
+//! key (a list of Tauri accelerators, or "Fn"); the Python app's `hotkey` key
+//! is left alone.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -14,8 +15,9 @@ pub struct Config {
     pub model: String,
     /// Language code, or "auto" to detect.
     pub language: String,
-    /// Global shortcut in Tauri accelerator syntax.
-    pub shortcut: String,
+    /// Active push-to-talk shortcuts (up to 3). "Fn" means the Fn/Globe key;
+    /// any other entry is a Tauri accelerator (e.g. "Cmd+Shift+Space").
+    pub shortcuts: Vec<String>,
     /// "toggle" (press to start/stop) or "hold" (push-to-talk).
     pub hotkey_mode: String,
     /// Insert a period when the speaker pauses at least this long (ms).
@@ -43,7 +45,8 @@ impl Default for Config {
             // Quantized large-v3-turbo: near-flagship accuracy at ~574 MB.
             model: String::new(),
             language: "en".into(),
-            shortcut: "Ctrl+Alt+Space".into(),
+            // Fn/Globe is the default push-to-talk key; users add up to 2 more.
+            shortcuts: vec!["Fn".into()],
             hotkey_mode: "hold".into(),
             pause_punctuation_ms: 700,
             remove_fillers: true,

@@ -9,7 +9,10 @@
   "app": {
     "windows": [],
     "withGlobalTauri": true,
-    "macOSPrivateApi": true
+    "macOSPrivateApi": true,
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'"
+    }
   },
   "bundle": {
     "active": true,
@@ -17,7 +20,7 @@
     "icon": ["icons/icon.png", "icons/icon.icns"],
     "macOS": {
       "minimumSystemVersion": "12.0",
-      "signingIdentity": "-"
+      "signingIdentity": "Gretchen Flow Dev"
     }
   }
 }

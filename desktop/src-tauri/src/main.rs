@@ -25,10 +25,10 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 const TRAY_ID: &str = "gf";
 const ICON_APP: &[u8] = include_bytes!("../icons/icon.png");
-const ICON_IDLE_DARK: &[u8] = include_bytes!("../icons/tray/idle.png");
-const ICON_IDLE_LIGHT: &[u8] = include_bytes!("../icons/tray/idle-light.png");
+/// Menu-bar icons: plain white Gretchen outline when idle, white Gretchen on a
+/// black badge while recording (shown alongside macOS's orange mic indicator).
+const ICON_IDLE: &[u8] = include_bytes!("../icons/tray/idle.png");
 const ICON_RECORDING: &[u8] = include_bytes!("../icons/tray/recording.png");
-const ICON_TRANSCRIBING: &[u8] = include_bytes!("../icons/tray/transcribing.png");
 
 #[derive(Clone, Copy, PartialEq)]
 enum TrayState {
@@ -44,12 +44,14 @@ struct AppState {
     recorder: audio::Recorder,
     engine: Arc<Mutex<Option<transcribe::Engine>>>,
     recording: AtomicBool,
-    /// Idle badge theme: true = dark (white art on black), false = light.
-    icon_dark: AtomicBool,
-    /// The currently registered global shortcut (changeable from the menu).
-    current_shortcut: Mutex<String>,
-    /// True while the Fn/Globe key is the active hotkey.
+    /// Active push-to-talk shortcuts (up to 3). "Fn" plus any registered
+    /// accelerators. Editable from the menu/window.
+    shortcuts: Mutex<Vec<String>>,
+    /// True while the Fn/Globe key is one of the active hotkeys.
     fn_hotkey: AtomicBool,
+    /// When the recorder window is open to change an existing shortcut, this
+    /// holds the accelerator being replaced (None means "add a new one").
+    pending_replace: Mutex<Option<String>>,
     /// The active Whisper model name (changeable from the menu).
     current_model: Mutex<String>,
     /// Live config; replaced wholesale by "Reload Config".
@@ -62,8 +64,14 @@ struct AppState {
 /// because macOS can't register it as a normal shortcut.
 const FN_HOTKEY: &str = "Fn";
 
+/// Maximum number of simultaneous push-to-talk shortcuts.
+const MAX_SHORTCUTS: usize = 3;
+
 /// The model recommended to first-time users (best accuracy/size balance).
 const RECOMMENDED_MODEL: &str = "large-v3-turbo-q5_0";
+
+/// Hugging Face page listing every downloadable ggml whisper.cpp model.
+const MODELS_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/tree/main";
 
 /// Whisper model choices offered in the tray menu: (ggml name, display label).
 const MODEL_CHOICES: &[(&str, &str)] = &[
@@ -74,16 +82,6 @@ const MODEL_CHOICES: &[(&str, &str)] = &[
     ("large-v3-turbo", "Large v3 Turbo — 1.6 GB, max accuracy"),
     ("small", "Small — 466 MB, lighter"),
     ("base", "Base — 142 MB, fastest"),
-];
-
-/// Hotkey choices offered in the tray menu: (accelerator, display label).
-const HOTKEY_CHOICES: &[(&str, &str)] = &[
-    ("Ctrl+Alt+Space", "Control + Option + Space"),
-    ("Cmd+Shift+Space", "Command + Shift + Space"),
-    ("Ctrl+Alt+D", "Control + Option + D"),
-    ("Cmd+Alt+G", "Command + Option + G"),
-    ("F6", "F6"),
-    ("Fn", "Fn  (🌐 Globe key)"),
 ];
 
 /// Apply a tray state on the main thread (AppKit UI is not thread-safe).
@@ -103,31 +101,23 @@ fn set_tray_state_on_main(app: &AppHandle, state: TrayState) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
-    // Dark theme: white Gretchen on a black badge (full color). Light theme:
-    // the original silhouette as a macOS template image, recolored by the OS.
-    let dark = app.state::<AppState>().icon_dark.load(Ordering::SeqCst);
-    if LAST_TRAY.with(|c| c.get()) == Some((state, dark)) {
+    if LAST_TRAY.with(|c| c.get()) == Some((state, false)) {
         return;
     }
-    LAST_TRAY.with(|c| c.set(Some((state, dark))));
-    let (idle, idle_template) = if dark {
-        (ICON_IDLE_DARK, false)
-    } else {
-        (ICON_IDLE_LIGHT, true)
-    };
-    let (bytes, template, title) = match state {
-        TrayState::Idle => (idle, idle_template, None),
-        TrayState::Downloading => (idle, idle_template, Some("↓")),
-        TrayState::Recording => (ICON_RECORDING, false, None),
-        TrayState::Transcribing => (ICON_TRANSCRIBING, false, None),
-        TrayState::NeedsModel => (idle, idle_template, Some("!")),
-        TrayState::Error => (idle, idle_template, Some("✕")),
+    LAST_TRAY.with(|c| c.set(Some((state, false))));
+    let (bytes, title) = match state {
+        TrayState::Idle => (ICON_IDLE, ""),
+        TrayState::Downloading => (ICON_IDLE, "↓"),
+        TrayState::Recording => (ICON_RECORDING, ""),
+        TrayState::Transcribing => (ICON_IDLE, ""),
+        TrayState::NeedsModel => (ICON_IDLE, "!"),
+        TrayState::Error => (ICON_IDLE, "✕"),
     };
     let _ = tray.set_icon(Image::from_bytes(bytes).ok());
-    let _ = tray.set_icon_as_template(template);
+    let _ = tray.set_icon_as_template(false);
     // Always set an explicit title: clearing with None doesn't reliably
     // remove the previous text on macOS.
-    let _ = tray.set_title(Some(title.unwrap_or("")));
+    let _ = tray.set_title(Some(title));
 }
 
 fn start_recording(app: &AppHandle) {
@@ -186,73 +176,102 @@ fn stop_and_transcribe(app: &AppHandle) {
     });
 }
 
-/// Menu action: switch the idle icon between dark and light, remember the
-/// choice in the config file, and relabel the menu item.
-fn toggle_icon_theme(app: &AppHandle) {
-    let state = app.state::<AppState>();
-    let dark = !state.icon_dark.load(Ordering::SeqCst);
-    state.icon_dark.store(dark, Ordering::SeqCst);
-    if !state.recording.load(Ordering::SeqCst) {
-        set_tray_state(app, TrayState::Idle);
-    }
-    let mut cfg = config::Config::load();
-    cfg.icon_theme = if dark { "dark".into() } else { "light".into() };
-    cfg.save();
-    log::info!("icon theme: {}", cfg.icon_theme);
-    refresh_menu(app);
-}
-
-/// Switch the global hotkey, persist it, and update the menu. On failure the
-/// previous hotkey stays registered. The special value "Fn" switches to the
-/// low-level Fn/Globe listener instead of a registered shortcut.
-fn set_hotkey(app: &AppHandle, accel: &str) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let old = state.current_shortcut.lock().unwrap().clone();
-    if old == accel {
-        return Ok(());
+/// Register exactly the given set of push-to-talk shortcuts, persist them, and
+/// refresh the UI. "Fn" drives the low-level Fn/Globe listener; every other
+/// entry is registered as a normal global shortcut. All accelerators are
+/// validated before anything is unregistered, so a bad entry leaves the
+/// previous set intact.
+fn apply_shortcuts(app: &AppHandle, list: Vec<String>) -> Result<(), String> {
+    // Validate every accelerator up front.
+    for accel in &list {
+        if accel != FN_HOTKEY {
+            accel
+                .parse::<Shortcut>()
+                .map_err(|e| format!("\"{accel}\" isn't a usable shortcut: {e}"))?;
+        }
     }
 
-    if accel == FN_HOTKEY {
-        if let Ok(old_shortcut) = old.parse::<Shortcut>() {
-            let _ = app.global_shortcut().unregister(old_shortcut);
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+    let mut fn_on = false;
+    for accel in &list {
+        if accel == FN_HOTKEY {
+            fn_on = true;
+            continue;
         }
-        state.fn_hotkey.store(true, Ordering::SeqCst);
-    } else {
-        let new_shortcut: Shortcut = accel
-            .parse()
-            .map_err(|e| format!("\"{accel}\" isn't a usable shortcut: {e}"))?;
-        if old == FN_HOTKEY {
-            state.fn_hotkey.store(false, Ordering::SeqCst);
-        } else if let Ok(old_shortcut) = old.parse::<Shortcut>() {
-            let _ = app.global_shortcut().unregister(old_shortcut);
-        }
-        if let Err(e) = app
-            .global_shortcut()
-            .on_shortcut(new_shortcut, |app, _sc, event| {
-                on_shortcut(app, event.state())
-            })
-        {
-            // Restore whatever was active before.
-            if old == FN_HOTKEY {
-                state.fn_hotkey.store(true, Ordering::SeqCst);
-            } else if let Ok(old_shortcut) = old.parse::<Shortcut>() {
-                let _ = app
-                    .global_shortcut()
-                    .on_shortcut(old_shortcut, |app, _sc, event| {
-                        on_shortcut(app, event.state())
-                    });
+        if let Ok(sc) = accel.parse::<Shortcut>() {
+            if let Err(e) = gs.on_shortcut(sc, |app, _sc, event| on_shortcut(app, event.state())) {
+                log::error!("couldn't register \"{accel}\": {e}");
             }
-            return Err(format!("couldn't register \"{accel}\": {e}"));
         }
     }
 
-    *state.current_shortcut.lock().unwrap() = accel.to_string();
+    let state = app.state::<AppState>();
+    state.fn_hotkey.store(fn_on, Ordering::SeqCst);
+    *state.shortcuts.lock().unwrap() = list.clone();
     let mut cfg = config::Config::load();
-    cfg.shortcut = accel.to_string();
+    cfg.shortcuts = list.clone();
     cfg.save();
-    log::info!("hotkey set to {accel}");
+    log::info!("shortcuts: {}", list.join(", "));
     refresh_menu(app);
     Ok(())
+}
+
+/// Add one push-to-talk shortcut (up to MAX_SHORTCUTS), rejecting duplicates.
+fn add_shortcut(app: &AppHandle, accel: &str) -> Result<(), String> {
+    let mut list = app.state::<AppState>().shortcuts.lock().unwrap().clone();
+    if list.iter().any(|a| a == accel) {
+        return Err("That shortcut is already added".into());
+    }
+    if list.len() >= MAX_SHORTCUTS {
+        return Err(format!("You can have at most {MAX_SHORTCUTS} shortcuts"));
+    }
+    list.push(accel.to_string());
+    apply_shortcuts(app, list)
+}
+
+/// Human-friendly label for a shortcut accelerator (e.g. the Fn/Globe key).
+fn hotkey_label(accel: &str) -> String {
+    if accel == FN_HOTKEY {
+        "Fn  (🌐 Globe key)".to_string()
+    } else {
+        accel.to_string()
+    }
+}
+
+/// Replace one push-to-talk shortcut with another, preserving its position.
+fn change_shortcut(app: &AppHandle, old: &str, new: &str) -> Result<(), String> {
+    if old == new {
+        return Ok(());
+    }
+    let mut list = app.state::<AppState>().shortcuts.lock().unwrap().clone();
+    if list.iter().any(|a| a == new) {
+        return Err("That shortcut is already added".into());
+    }
+    match list.iter().position(|a| a == old) {
+        Some(pos) => list[pos] = new.to_string(),
+        None => {
+            // Old entry gone (e.g. config changed underneath) — add instead.
+            if list.len() >= MAX_SHORTCUTS {
+                return Err(format!("You can have at most {MAX_SHORTCUTS} shortcuts"));
+            }
+            list.push(new.to_string());
+        }
+    }
+    apply_shortcuts(app, list)
+}
+
+/// Remove a push-to-talk shortcut, keeping at least one active.
+fn remove_shortcut(app: &AppHandle, accel: &str) {
+    let mut list = app.state::<AppState>().shortcuts.lock().unwrap().clone();
+    list.retain(|a| a != accel);
+    if list.is_empty() {
+        log::info!("refusing to remove the last shortcut");
+        return;
+    }
+    if let Err(e) = apply_shortcuts(app, list) {
+        log::error!("remove shortcut: {e}");
+    }
 }
 
 /// Watch the Fn/Globe key globally (it can't be a registered shortcut).
@@ -312,6 +331,12 @@ fn spawn_fn_listener(app: AppHandle) {
 /// Menu action: switch the Whisper model. Downloads it if needed and swaps
 /// the engine in the background; on failure the previous model stays active.
 fn set_model(app: &AppHandle, name: &str) {
+    // Reject anything that isn't an absolute path to a local model file or a
+    // valid ggml model name, before it's persisted or used to build a URL/path.
+    if !name.starts_with('/') && !model::is_valid_model_name(name) {
+        log::error!("ignoring invalid model name: {name:?}");
+        return;
+    }
     let state = app.state::<AppState>();
     let previous = {
         let mut current = state.current_model.lock().unwrap();
@@ -461,11 +486,12 @@ struct MenuChoice {
 struct MenuState {
     has_engine: bool,
     status: String,
-    icon_dark: bool,
     models: Vec<MenuChoice>,
     custom_model: Option<String>,
-    hotkeys: Vec<MenuChoice>,
-    custom_hotkey: Option<String>,
+    /// Active push-to-talk shortcuts, in order (first is the default Fn).
+    shortcuts: Vec<String>,
+    /// Whether another shortcut can still be added (fewer than MAX_SHORTCUTS).
+    can_add_shortcut: bool,
     recent: Vec<String>,
 }
 
@@ -474,7 +500,7 @@ struct MenuState {
 fn menu_state(app: AppHandle) -> MenuState {
     let state = app.state::<AppState>();
     let current_model = state.current_model.lock().unwrap().clone();
-    let current_shortcut = state.current_shortcut.lock().unwrap().clone();
+    let shortcuts = state.shortcuts.lock().unwrap().clone();
     let hotkey_mode = state.cfg.lock().unwrap().hotkey_mode.clone();
     let has_engine = state.engine.lock().unwrap().is_some();
     let recent = history::recent(HISTORY_MENU_ITEMS);
@@ -503,34 +529,17 @@ fn menu_state(app: AppHandle) -> MenuState {
         Some(current_model.clone())
     };
 
-    let hotkeys = HOTKEY_CHOICES
-        .iter()
-        .map(|(accel, label)| MenuChoice {
-            id: (*accel).to_string(),
-            label: (*label).to_string(),
-            active: *accel == current_shortcut,
-            note: String::new(),
-        })
-        .collect();
-    let hotkey_listed = HOTKEY_CHOICES.iter().any(|(a, _)| *a == current_shortcut);
-    let custom_hotkey = if hotkey_listed {
-        None
-    } else {
-        Some(current_shortcut.clone())
-    };
-
     MenuState {
         has_engine,
         status: if has_engine {
-            format!("READY · {current_shortcut} · {hotkey_mode}")
+            format!("READY · {} · {hotkey_mode}", shortcuts.join(" / "))
         } else {
             "NO MODEL — PICK ONE BELOW".to_string()
         },
-        icon_dark: state.icon_dark.load(Ordering::SeqCst),
         models,
         custom_model,
-        hotkeys,
-        custom_hotkey,
+        can_add_shortcut: shortcuts.len() < MAX_SHORTCUTS,
+        shortcuts,
         recent,
     }
 }
@@ -545,24 +554,75 @@ fn menu_model_from_file(app: AppHandle) {
     pick_model_file(&app);
 }
 
+/// Open the Hugging Face model list in the default browser so the user can
+/// download any ggml model, then load it via "from file…".
 #[tauri::command]
-fn menu_custom_model(app: AppHandle) {
-    open_model_window(&app);
+fn open_models_page() {
+    open_url(MODELS_URL);
+}
+
+/// Open a URL in the user's default browser.
+fn open_url(url: &str) {
+    #[cfg(target_os = "macos")]
+    if let Err(e) = std::process::Command::new("open").arg(url).spawn() {
+        log::error!("couldn't open {url}: {e}");
+    }
+}
+
+/// Open a specific macOS Privacy & Security pane so the user can grant a
+/// permission Gretchen Flow needs.
+#[tauri::command]
+fn open_privacy(pane: String) {
+    let anchor = match pane.as_str() {
+        "microphone" => "Privacy_Microphone",
+        "accessibility" => "Privacy_Accessibility",
+        "input" => "Privacy_ListenEvent", // Input Monitoring (for the Fn key)
+        _ => return,
+    };
+    open_url(&format!(
+        "x-apple.systempreferences:com.apple.preference.security?{anchor}"
+    ));
+}
+
+/// Briefly open the microphone so macOS shows its permission prompt during
+/// setup (cpal triggers the TCC prompt the first time the input device opens).
+#[tauri::command]
+fn prime_microphone(app: AppHandle) {
+    std::thread::spawn(move || {
+        let state = app.state::<AppState>();
+        state.recorder.start();
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let _ = state.recorder.stop();
+    });
 }
 
 #[tauri::command]
-fn menu_choose_hotkey(app: AppHandle, accel: String) -> Result<(), String> {
-    set_hotkey(&app, &accel)
+fn menu_remove_hotkey(app: AppHandle, accel: String) {
+    remove_shortcut(&app, &accel);
 }
 
+/// Open the recorder to ADD a new shortcut.
 #[tauri::command]
 fn menu_record_hotkey(app: AppHandle) {
+    *app.state::<AppState>().pending_replace.lock().unwrap() = None;
     open_hotkey_window(&app);
 }
 
+/// Open the recorder to CHANGE an existing shortcut to anything else.
 #[tauri::command]
-fn menu_toggle_theme(app: AppHandle) {
-    toggle_icon_theme(&app);
+fn menu_change_hotkey(app: AppHandle, accel: String) {
+    *app.state::<AppState>().pending_replace.lock().unwrap() = Some(accel);
+    open_hotkey_window(&app);
+}
+
+/// The shortcut the recorder is currently set to replace (None = add mode).
+#[tauri::command]
+fn hotkey_replace_target(app: AppHandle) -> Option<String> {
+    app.state::<AppState>()
+        .pending_replace
+        .lock()
+        .unwrap()
+        .clone()
 }
 
 #[tauri::command]
@@ -586,12 +646,18 @@ fn menu_copy_recent(index: usize) {
     };
     let pasteboard = NSPasteboard::generalPasteboard();
     pasteboard.clearContents();
-    let ok = unsafe {
-        pasteboard.setString_forType(&NSString::from_str(text), NSPasteboardTypeString)
-    };
+    let ok =
+        unsafe { pasteboard.setString_forType(&NSString::from_str(text), NSPasteboardTypeString) };
     if !ok {
         log::error!("failed to copy recent dictation to clipboard");
     }
+}
+
+/// Erase all stored dictation history and refresh the menu/window.
+#[tauri::command]
+fn menu_clear_history(app: AppHandle) {
+    history::clear();
+    refresh_menu(&app);
 }
 
 #[tauri::command]
@@ -616,8 +682,7 @@ fn open_main_window(app: &AppHandle) {
         tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("menu.html".into()))
             .title("Gretchen Flow")
             .inner_size(440.0, 620.0)
-            .min_inner_size(360.0, 480.0)
-            .resizable(true)
+            .resizable(false)
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
             .focused(true)
@@ -680,65 +745,44 @@ fn close_setup(app: AppHandle) {
     }
 }
 
-/// Open (or focus) the custom model input window.
-fn open_model_window(app: &AppHandle) {
-    activate_app();
-    if let Some(window) = app.get_webview_window("model") {
-        let _ = window.set_focus();
-        return;
-    }
-    let result =
-        tauri::WebviewWindowBuilder::new(app, "model", tauri::WebviewUrl::App("model.html".into()))
-            .title("Custom Model — Gretchen Flow")
-            .inner_size(420.0, 250.0)
-            .resizable(false)
-            .always_on_top(true)
-            .build();
-    if let Err(e) = result {
-        log::error!("couldn't open model window: {e}");
-    }
-}
-
-#[tauri::command]
-async fn apply_custom_model(app: AppHandle, name: String) -> Result<(), String> {
-    let name = name.trim().to_string();
-    if name.is_empty() || name.contains(['/', ' ', '\\']) {
-        return Err("Enter a plain model name like \"medium.en\"".into());
-    }
-    // Validate the model exists in the collection before kicking off a
-    // potentially large download.
-    if !model::model_path(&name).exists() {
-        let url =
-            format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin");
-        ureq::head(&url)
-            .call()
-            .map_err(|_| format!("No model named \"{name}\" in the whisper.cpp collection"))?;
-    }
-    set_model(&app, &name);
-    if let Some(window) = app.get_webview_window("model") {
-        let _ = window.close();
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn cancel_custom_model(app: AppHandle) {
-    if let Some(window) = app.get_webview_window("model") {
-        let _ = window.close();
-    }
-}
-
 #[tauri::command]
 fn apply_custom_hotkey(app: AppHandle, accel: String) -> Result<(), String> {
-    set_hotkey(&app, &accel)?;
+    let target = app
+        .state::<AppState>()
+        .pending_replace
+        .lock()
+        .unwrap()
+        .take();
+    match target {
+        Some(old) => change_shortcut(&app, &old, &accel)?,
+        None => add_shortcut(&app, &accel)?,
+    }
     if let Some(window) = app.get_webview_window("hotkey") {
         let _ = window.close();
     }
     Ok(())
 }
 
+/// Recorder "Remove" button: drop the shortcut being changed.
+#[tauri::command]
+fn remove_pending_hotkey(app: AppHandle) {
+    let target = app
+        .state::<AppState>()
+        .pending_replace
+        .lock()
+        .unwrap()
+        .take();
+    if let Some(accel) = target {
+        remove_shortcut(&app, &accel);
+    }
+    if let Some(window) = app.get_webview_window("hotkey") {
+        let _ = window.close();
+    }
+}
+
 #[tauri::command]
 fn cancel_custom_hotkey(app: AppHandle) {
+    *app.state::<AppState>().pending_replace.lock().unwrap() = None;
     if let Some(window) = app.get_webview_window("hotkey") {
         let _ = window.close();
     }
@@ -781,9 +825,10 @@ struct MenuHandles {
     hist: Vec<MenuItem<tauri::Wry>>,
     model_items: Vec<CheckMenuItem<tauri::Wry>>,
     model_custom: CheckMenuItem<tauri::Wry>,
-    hotkey_items: Vec<CheckMenuItem<tauri::Wry>>,
-    hotkey_custom: CheckMenuItem<tauri::Wry>,
-    theme: MenuItem<tauri::Wry>,
+    /// Up to MAX_SHORTCUTS slots, each showing an active shortcut (click to
+    /// remove) or "(empty)" when unused.
+    hotkey_slots: Vec<MenuItem<tauri::Wry>>,
+    hotkey_add: MenuItem<tauri::Wry>,
 }
 
 thread_local! {
@@ -832,8 +877,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<MenuHandles> {
     model_menu.append(&PredefinedMenuItem::separator(app)?)?;
     model_menu.append(&MenuItem::with_id(
         app,
-        "custom-model",
-        "Custom Model…",
+        "browse-models",
+        "Browse Models on Hugging Face…",
         true,
         None::<&str>,
     )?)?;
@@ -846,36 +891,18 @@ fn build_menu(app: &AppHandle) -> tauri::Result<MenuHandles> {
     )?)?;
     menu.append(&model_menu)?;
 
-    let hotkey_menu = Submenu::with_id(app, "hotkey-menu", "Hotkey", true)?;
-    let mut hotkey_items = Vec::new();
-    for (accel, label) in HOTKEY_CHOICES {
-        let item = CheckMenuItem::with_id(
-            app,
-            format!("hotkey-{accel}"),
-            *label,
-            true,
-            false,
-            None::<&str>,
-        )?;
+    let hotkey_menu = Submenu::with_id(app, "hotkey-menu", "Shortcuts", true)?;
+    let mut hotkey_slots = Vec::new();
+    for i in 0..MAX_SHORTCUTS {
+        let item = MenuItem::with_id(app, format!("hotkey-slot-{i}"), "—", false, None::<&str>)?;
         hotkey_menu.append(&item)?;
-        hotkey_items.push(item);
+        hotkey_slots.push(item);
     }
-    let hotkey_custom =
-        CheckMenuItem::with_id(app, "hotkey-custom-slot", "—", false, false, None::<&str>)?;
-    hotkey_menu.append(&hotkey_custom)?;
     hotkey_menu.append(&PredefinedMenuItem::separator(app)?)?;
-    hotkey_menu.append(&MenuItem::with_id(
-        app,
-        "record-hotkey",
-        "Set Custom Hotkey…",
-        true,
-        None::<&str>,
-    )?)?;
+    let hotkey_add = MenuItem::with_id(app, "add-hotkey", "Add Shortcut…", true, None::<&str>)?;
+    hotkey_menu.append(&hotkey_add)?;
     menu.append(&hotkey_menu)?;
 
-    let theme = MenuItem::with_id(app, "theme", "Icon", true, None::<&str>)?;
-    menu.append(&theme)?;
-    menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(
         app,
         "setup",
@@ -905,9 +932,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<MenuHandles> {
         hist,
         model_items,
         model_custom,
-        hotkey_items,
-        hotkey_custom,
-        theme,
+        hotkey_slots,
+        hotkey_add,
     })
 }
 
@@ -920,18 +946,17 @@ fn refresh_menu(app: &AppHandle) {
 fn refresh_menu_on_main(app: &AppHandle) {
     let state = app.state::<AppState>();
     let recent = history::recent(HISTORY_MENU_ITEMS);
-    let current_shortcut = state.current_shortcut.lock().unwrap().clone();
+    let shortcuts = state.shortcuts.lock().unwrap().clone();
     let current_model = state.current_model.lock().unwrap().clone();
     let hotkey_mode = state.cfg.lock().unwrap().hotkey_mode.clone();
     let has_engine = state.engine.lock().unwrap().is_some();
-    let dark = state.icon_dark.load(Ordering::SeqCst);
 
     MENU_HANDLES.with(|handles| {
         let handles = handles.borrow();
         let Some(h) = handles.as_ref() else { return };
 
         let _ = h.status.set_text(if has_engine {
-            format!("Gretchen Flow — {current_shortcut} ({hotkey_mode})")
+            format!("Gretchen Flow — {} ({hotkey_mode})", shortcuts.join(" / "))
         } else {
             "No model — open Model ▸ to download one".to_string()
         });
@@ -991,27 +1016,20 @@ fn refresh_menu_on_main(app: &AppHandle) {
             let _ = h.model_custom.set_checked(true);
         }
 
-        let mut hotkey_listed = false;
-        for ((accel, _), item) in HOTKEY_CHOICES.iter().zip(&h.hotkey_items) {
-            let checked = *accel == current_shortcut;
-            hotkey_listed |= checked;
-            let _ = item.set_checked(checked);
+        for (i, item) in h.hotkey_slots.iter().enumerate() {
+            match shortcuts.get(i) {
+                Some(accel) => {
+                    // Clicking a slot opens the recorder to change/remove it.
+                    let _ = item.set_text(format!("{}  ▸ change…", hotkey_label(accel)));
+                    let _ = item.set_enabled(true);
+                }
+                None => {
+                    let _ = item.set_text("(empty)");
+                    let _ = item.set_enabled(false);
+                }
+            }
         }
-        if hotkey_listed {
-            let _ = h.hotkey_custom.set_text("—");
-            let _ = h.hotkey_custom.set_enabled(false);
-            let _ = h.hotkey_custom.set_checked(false);
-        } else {
-            let _ = h.hotkey_custom.set_text(current_shortcut.clone());
-            let _ = h.hotkey_custom.set_enabled(true);
-            let _ = h.hotkey_custom.set_checked(true);
-        }
-
-        let _ = h.theme.set_text(if dark {
-            "Icon: Dark — switch to Light"
-        } else {
-            "Icon: Light — switch to Dark"
-        });
+        let _ = h.hotkey_add.set_enabled(shortcuts.len() < MAX_SHORTCUTS);
     });
 
     *state.history_items.lock().unwrap() = recent;
@@ -1039,26 +1057,33 @@ fn on_menu_event(app: &AppHandle, id: &str) {
         show_setup(app);
         return;
     }
-    if id == "theme" {
-        toggle_icon_theme(app);
-        return;
-    }
-    if id == "record-hotkey" {
+    if id == "add-hotkey" {
         open_hotkey_window(app);
         return;
     }
-    if id == "custom-model" {
-        open_model_window(app);
+    if id == "browse-models" {
+        open_models_page();
         return;
     }
-    if id == "model-custom-slot" || id == "hotkey-custom-slot" {
-        return; // already-active custom entries — nothing to do
+    if id == "model-custom-slot" {
+        return; // already-active custom entry — nothing to do
     }
-    if let Some(accel) = id.strip_prefix("hotkey-") {
-        if accel != "menu" {
-            if let Err(e) = set_hotkey(app, accel) {
-                log::error!("{e}");
-            }
+    // Clicking a filled shortcut slot opens the recorder to change it
+    // (the recorder also offers a Remove button).
+    if let Some(idx) = id
+        .strip_prefix("hotkey-slot-")
+        .and_then(|s| s.parse::<usize>().ok())
+    {
+        let accel = app
+            .state::<AppState>()
+            .shortcuts
+            .lock()
+            .unwrap()
+            .get(idx)
+            .cloned();
+        if let Some(accel) = accel {
+            *app.state::<AppState>().pending_replace.lock().unwrap() = Some(accel);
+            open_hotkey_window(app);
         }
         return;
     }
@@ -1159,20 +1184,11 @@ fn reload_config(app: &AppHandle) {
     let fresh = config::Config::load();
     let state = app.state::<AppState>();
 
-    // Re-register the hotkey if it changed.
-    let current_shortcut = state.current_shortcut.lock().unwrap().clone();
-    if fresh.shortcut != current_shortcut {
-        if let Err(e) = set_hotkey(app, &fresh.shortcut) {
+    // Re-register the shortcuts if they changed.
+    let current = state.shortcuts.lock().unwrap().clone();
+    if fresh.shortcuts != current {
+        if let Err(e) = apply_shortcuts(app, fresh.shortcuts.clone()) {
             log::error!("reload config: {e}");
-        }
-    }
-
-    // Apply the icon theme if it changed.
-    let want_dark = fresh.icon_theme != "light";
-    if want_dark != state.icon_dark.load(Ordering::SeqCst) {
-        state.icon_dark.store(want_dark, Ordering::SeqCst);
-        if !state.recording.load(Ordering::SeqCst) {
-            set_tray_state(app, TrayState::Idle);
         }
     }
 
@@ -1193,22 +1209,27 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cfg = config::Config::load();
     log::info!(
-        "Gretchen Flow starting (model: {}, shortcut: {}, mode: {})",
+        "Gretchen Flow starting (model: {}, shortcuts: {}, mode: {})",
         cfg.model,
-        cfg.shortcut,
+        cfg.shortcuts.join(", "),
         cfg.hotkey_mode
     );
 
-    // "Fn" is handled by the low-level listener, not a registered shortcut.
-    let shortcut: Option<Shortcut> = if cfg.shortcut == FN_HOTKEY {
-        None
-    } else {
-        Some(
-            cfg.shortcut
-                .parse()
-                .expect("invalid shortcut in config.json"),
-        )
-    };
+    // Parse the registrable shortcuts (everything except "Fn", which the
+    // low-level listener handles). Unparseable entries are dropped with a warning.
+    let startup_shortcuts: Vec<Shortcut> = cfg
+        .shortcuts
+        .iter()
+        .filter(|a| *a != FN_HOTKEY)
+        .filter_map(|a| match a.parse::<Shortcut>() {
+            Ok(sc) => Some(sc),
+            Err(e) => {
+                log::error!("ignoring invalid shortcut \"{a}\": {e}");
+                None
+            }
+        })
+        .collect();
+    let fn_default = cfg.shortcuts.iter().any(|a| a == FN_HOTKEY);
 
     // Surface panics in the log — an unwind across a system callback aborts
     // the process with no crash report otherwise.
@@ -1221,20 +1242,23 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             apply_custom_hotkey,
             cancel_custom_hotkey,
-            apply_custom_model,
-            cancel_custom_model,
+            open_models_page,
+            open_privacy,
+            prime_microphone,
             download_recommended_model,
             close_setup,
             menu_state,
             menu_choose_model,
             menu_model_from_file,
-            menu_custom_model,
-            menu_choose_hotkey,
+            menu_remove_hotkey,
             menu_record_hotkey,
-            menu_toggle_theme,
+            menu_change_hotkey,
+            hotkey_replace_target,
+            remove_pending_hotkey,
             menu_reload_config,
             menu_open_setup,
             menu_copy_recent,
+            menu_clear_history,
             menu_quit,
             menu_close
         ])
@@ -1242,9 +1266,9 @@ fn main() {
             recorder: audio::Recorder::spawn(),
             engine: Arc::new(Mutex::new(None)),
             recording: AtomicBool::new(false),
-            icon_dark: AtomicBool::new(cfg.icon_theme != "light"),
-            current_shortcut: Mutex::new(cfg.shortcut.clone()),
-            fn_hotkey: AtomicBool::new(cfg.shortcut == FN_HOTKEY),
+            shortcuts: Mutex::new(cfg.shortcuts.clone()),
+            fn_hotkey: AtomicBool::new(fn_default),
+            pending_replace: Mutex::new(None),
             current_model: Mutex::new(cfg.model.clone()),
             cfg: Mutex::new(cfg),
             history_items: Mutex::new(Vec::new()),
@@ -1258,25 +1282,19 @@ fn main() {
                 set_dock_icon();
             }
 
-            let dark = app.state::<AppState>().icon_dark.load(Ordering::SeqCst);
-            let initial_icon = if dark {
-                ICON_IDLE_DARK
-            } else {
-                ICON_IDLE_LIGHT
-            };
             let handles = build_menu(app.handle())?;
             TrayIconBuilder::with_id(TRAY_ID)
-                .icon(Image::from_bytes(initial_icon)?)
-                .icon_as_template(!dark)
+                .icon(Image::from_bytes(ICON_IDLE)?)
+                .icon_as_template(false)
                 .menu(&handles.menu)
                 .on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()))
                 .build(app)?;
             MENU_HANDLES.with(|cell| *cell.borrow_mut() = Some(handles));
             refresh_menu(app.handle());
 
-            if let Some(shortcut) = shortcut {
+            for shortcut in &startup_shortcuts {
                 app.global_shortcut()
-                    .on_shortcut(shortcut, |app, _sc, event| on_shortcut(app, event.state()))?;
+                    .on_shortcut(*shortcut, |app, _sc, event| on_shortcut(app, event.state()))?;
             }
             spawn_fn_listener(app.handle().clone());
 

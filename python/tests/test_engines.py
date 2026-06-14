@@ -16,3 +16,20 @@ def test_create_mlx_whisper():
 def test_unknown_engine_raises():
     with pytest.raises(ValueError, match="Unknown engine"):
         create_engine("bogus", "small")
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["../../etc/passwd", "a/../../b", "", "bad\nname", "x;rm -rf", "a" * 257],
+)
+def test_invalid_model_rejected(model):
+    with pytest.raises(ValueError, match="invalid model identifier"):
+        create_engine("faster-whisper", model)
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["large-v3-turbo", "small", "Systran/faster-whisper-large-v3", "base.en"],
+)
+def test_valid_model_accepted(model):
+    assert create_engine("faster-whisper", model).name == "faster-whisper"

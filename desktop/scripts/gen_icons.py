@@ -5,12 +5,8 @@
 (icons/gretchen-source.png, white line art on black).
 
 - icons/icon.png: 1024x1024 app icon — white art on a rounded dark square
-- icons/tray/idle.png: 44x44 white Gretchen on a black rounded badge (dark)
-- icons/tray/idle-light.png: the original template silhouette — black art on
-  transparency, recolored by macOS to match the menu bar (light)
-- icons/tray/recording.png: white Gretchen on an orange-to-yellow gradient
-  badge — "live" indicator
-- icons/tray/transcribing.png: amber Gretchen — busy indicator
+- icons/tray/idle.png: 44x44 plain white Gretchen outline on transparency (idle)
+- icons/tray/recording.png: white Gretchen on a black rounded badge (recording)
 
 Run: uv run desktop/scripts/gen_icons.py
 """
@@ -85,12 +81,11 @@ def main() -> None:
     TRAY.mkdir(parents=True, exist_ok=True)
 
     app_icon(art).save(ICONS / "icon.png")
+    # Idle: plain white Gretchen outline. Recording: white Gretchen on black.
     black = (0, 0, 0)
-    badge_icon(art, black, black).save(TRAY / "idle.png")
-    tray_icon(art, (0, 0, 0, 255)).save(TRAY / "idle-light.png")
-    badge_icon(art, (255, 140, 0), (255, 214, 10)).save(TRAY / "recording.png")
-    tray_icon(art, (255, 159, 10, 255)).save(TRAY / "transcribing.png")
-    print(f"wrote icon.png and 3 tray icons under {ICONS}")
+    tray_icon(art, (255, 255, 255, 255)).save(TRAY / "idle.png")
+    badge_icon(art, black, black).save(TRAY / "recording.png")
+    print(f"wrote icon.png and 2 tray icons under {ICONS}")
 
 
 if __name__ == "__main__":

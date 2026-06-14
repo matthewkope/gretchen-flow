@@ -28,6 +28,8 @@
         color: inherit; cursor: pointer;
       }
       button.primary { background: #0a84ff; border-color: #0a84ff; color: white; font-weight: 600; }
+      .perms { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 6px; }
+      button.perm { font-size: 12px; padding: 6px 12px; }
       #status { font-size: 12px; opacity: 0.7; min-height: 16px; }
     </style>
   </head>
@@ -45,17 +47,23 @@
         downloads.
       </li>
       <li>
-        <b>Grant macOS permissions.</b> On first use you’ll be asked for
-        <b>Microphone</b> (to hear you) and <b>Accessibility</b> (to type the
-        text into other apps). Approve both in
-        <code>System&nbsp;Settings ▸ Privacy &amp; Security</code>.
+        <b>Grant macOS permissions.</b> Gretchen needs three, all under
+        <code>System&nbsp;Settings ▸ Privacy &amp; Security</code>. Click each
+        button to open the right pane and toggle <b>Gretchen Flow</b> on:
+        <div class="perms">
+          <button class="perm" data-pane="microphone">🎙 Microphone</button>
+          <button class="perm" data-pane="accessibility">⌨️ Accessibility</button>
+          <button class="perm" data-pane="input">🌐 Input Monitoring</button>
+        </div>
+        <div class="hint">Microphone = hear you · Accessibility = type the text ·
+        Input Monitoring = detect the <b>Fn</b> key. Relaunch Gretchen after
+        enabling Input Monitoring.</div>
       </li>
       <li>
-        <b>Dictate.</b> Hold your hotkey (default
-        <code>Control + Option + Space</code>), speak, then release — your
-        words type out where the cursor is. Change the hotkey anytime from the
-        menu’s <b>Hotkey</b> submenu.
-        <div class="hint">Tip: to use the <b>🌐 Globe/Fn</b> key, also set
+        <b>Dictate.</b> Hold your hotkey (default the <b>🌐 Globe/Fn</b> key),
+        speak, then release — your words type out where the cursor is. Change or
+        add hotkeys anytime from the window’s <b>Shortcuts</b> section.
+        <div class="hint">Tip: for the <b>🌐 Globe/Fn</b> key, also set
         <code>System Settings ▸ Keyboard ▸ Press 🌐 to: Do Nothing</code>.</div>
       </li>
     </ol>
@@ -66,16 +74,6 @@
       <button id="close">I’ll choose from the menu</button>
     </div>
 
-    <script>
-      const { invoke } = window.__TAURI__.core;
-      const status = document.getElementById("status");
-      const download = document.getElementById("download");
-      download.onclick = () => {
-        status.textContent = "Downloading… you can close this window; the menu bar icon shows ↓ while it works.";
-        download.disabled = true;
-        invoke("download_recommended_model");
-      };
-      document.getElementById("close").onclick = () => invoke("close_setup");
-    </script>
+    <script src="setup.js"></script>
   </body>
 </html>
