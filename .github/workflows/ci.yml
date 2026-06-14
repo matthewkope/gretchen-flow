@@ -7,7 +7,9 @@ on:
 
 jobs:
   desktop:
-    runs-on: macos-latest
+    # Pinned to macos-14 (matches release.yml): macos-latest (macos-15) trips a
+    # whisper.cpp i8mm intrinsic build error in whisper-rs-sys.
+    runs-on: macos-14
     defaults:
       run:
         working-directory: desktop/src-tauri
@@ -27,7 +29,7 @@ jobs:
         run: cargo fmt --check
 
   python:
-    runs-on: macos-latest
+    runs-on: macos-14
     defaults:
       run:
         working-directory: python
