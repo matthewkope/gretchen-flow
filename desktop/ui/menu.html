@@ -78,8 +78,8 @@
       .item .bullet { flex: 0 0 auto; }
       .item .label { flex: 1; word-break: break-word; }
       .item .note { font-size: 12px; color: #ff9b6b; }
-      .item.active .bullet { color: #5fff5f; }
-      .item.active:hover .bullet { color: #000; }
+      /* selected rows use a ▸ triangle (set in menu.js), not a colored font */
+      .item.active .bullet { color: #fff; }
       .item.disabled { opacity: 0.4; cursor: default; }
       .item.disabled:hover { background: none; color: inherit; }
       .empty { color: #888; padding: 4px 6px; }

@@ -147,6 +147,15 @@ fn stop_and_transcribe(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         let mut samples = audio::resample_to_16k(&recording);
+        // Silence gate: a near-silent clip (hotkey tapped with nothing said)
+        // makes Whisper hallucinate stock phrases, so drop it and type nothing.
+        let rms = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len().max(1) as f32).sqrt();
+        const SILENCE_RMS: f32 = 0.01;
+        if rms < SILENCE_RMS {
+            log::info!("clip is silent (rms {rms:.4}); typing nothing");
+            set_tray_state(&app, TrayState::Idle);
+            return;
+        }
         // Whisper rejects clips under 1 s — pad short ones with silence.
         const MIN_SAMPLES: usize = 17_600; // 1.1 s at 16 kHz
         if samples.len() < MIN_SAMPLES {

@@ -6,7 +6,8 @@ function row(opts) {
   el.className = "item" + (opts.active ? " active" : "");
   const bullet = document.createElement("span");
   bullet.className = "bullet";
-  bullet.textContent = "•";
+  // Selected/active rows are marked with a sideways triangle.
+  bullet.textContent = opts.active ? "▸" : "•";
   const label = document.createElement("span");
   label.className = "label";
   label.textContent = opts.label;

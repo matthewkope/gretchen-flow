@@ -7,8 +7,8 @@ a global hotkey starts recording, your speech is transcribed locally with
 Whisper, and the text is typed straight into whatever app has focus — your
 editor, browser, chat, anywhere.
 
-- 👧 **Gretchen lives in the menu bar** — quiet when idle, glowing red while recording, amber while transcribing
-- 🎙️ **Push-to-talk or toggle** — hold a key to talk, or tap to start/stop
+- 👧 **Gretchen lives in the menu bar** — a white Gretchen when idle; while recording she shows a black badge, next to macOS's own orange mic indicator
+- 🎙️ **Push-to-talk or toggle** — hold a key to talk, or tap to start/stop; the **Fn / 🌐 Globe** key works as a hotkey, and you can have up to 3 shortcuts
 - ✍️ **Speech-aware grammar** — pausing while you speak inserts a period; filler
   words ("um", "uh") are removed automatically
 - 📋 **Spoken lists** — "one, buy milk… two, walk the dog" becomes a real
@@ -63,23 +63,26 @@ until a model is ready). To get going:
    the menu bar icon's **Model** submenu and choose one. The recommended
    **Large v3 Turbo (quantized)** is the best balance of accuracy and size.
    The Gretchen icon shows a **↓** while it downloads.
-2. **Grant permissions** when macOS prompts: **Microphone** (to hear you) and
-   **Accessibility** (to type the text). Both are under
-   System Settings ▸ Privacy & Security.
-3. **Dictate:** click into any text field, **hold Ctrl+Option+Space** —
-   Gretchen lights up while she listens — then **let go**; your words type out
-   where the cursor is.
+2. **Grant permissions** under System Settings ▸ Privacy & Security — the setup
+   window has a button for each: **Microphone** (to hear you), **Accessibility**
+   (to type the text), and **Input Monitoring** (to detect the Fn key).
+3. **Dictate:** click into any text field, **hold the 🌐 Globe/Fn key** (the
+   default) — Gretchen switches to her recording badge while she listens — then
+   **let go**; your words type out where the cursor is.
 
 You can reopen the guide anytime from the menu's **Getting Started…** item.
 
 | Menu bar (Gretchen icon) | Meaning |
 |---|---|
-| monochrome | idle, ready |
+| white Gretchen | idle, ready |
 | with ! | no model yet — open the setup guide / Model menu |
 | with ↓ | downloading a model |
-| **red/amber, glowing** | recording — release the keys to finish |
-| **amber** | transcribing |
+| **black badge** (+ macOS orange mic) | recording — release the key to finish |
 | with ✕ | model failed to load (check the log) |
+
+The macOS **orange microphone** indicator that appears while recording is the
+system's own privacy indicator — it's not part of Gretchen Flow and can't be
+hidden.
 
 ### Configuration
 
@@ -89,7 +92,7 @@ You can reopen the guide anytime from the menu's **Getting Started…** item.
 {
   "model": "large-v3-turbo-q5_0",
   "language": "en",
-  "shortcut": "Ctrl+Alt+Space",
+  "shortcuts": ["Fn"],
   "hotkey_mode": "hold",
   "pause_punctuation_ms": 700,
   "remove_fillers": true,
@@ -105,9 +108,11 @@ You can reopen the guide anytime from the menu's **Getting Started…** item.
   `small` (~466 MB), `base` (~142 MB) — or an absolute path to a local
   `.bin`/`.gguf` model file (also selectable via **Model ▸ Model from File…**)
 - `hotkey_mode`: `"hold"` (push-to-talk — records while held, default) or `"toggle"` (tap to start/stop)
-- `shortcut`: any [Tauri accelerator](https://v2.tauri.app/learn/global-shortcut/), e.g. `"Cmd+Shift+D"` —
-  or just pick one from the tray menu's **Hotkey** submenu (takes effect
-  immediately and is saved here)
+- `shortcuts`: up to **3** push-to-talk hotkeys; the default is the **Fn / 🌐
+  Globe** key (`"Fn"`). Each is a [Tauri accelerator](https://v2.tauri.app/learn/global-shortcut/)
+  like `"Cmd+Shift+D"`, except `"Fn"` which is the special Globe key. Add, change
+  (click a shortcut to re-record it), or remove them from the window's
+  **Shortcuts** section — changes save here immediately
 - `pause_punctuation_ms`: pausing this long while speaking inserts a period and
   capitalizes the next sentence (smaller models often skip punctuation; this
   recovers it from your speech rhythm). Set `0` to disable.
@@ -118,9 +123,9 @@ You can reopen the guide anytime from the menu's **Getting Started…** item.
 - `vocabulary`: words and phrases (names, jargon, brands) that recognition is
   biased toward, so they come out spelled the way you wrote them
 
-Most settings can also be changed from the tray menu (model, hotkey, icon
-theme). After hand-editing `config.json`, choose **Reload Config** from the
-tray menu to apply every change live — no restart needed.
+Most settings can also be changed from the window/tray menu (model, shortcuts).
+After hand-editing `config.json`, choose **Reload Config** from the menu to
+apply every change live — no restart needed.
 
 Dictation history is saved to `~/Library/Application Support/gretchen-flow/history.jsonl`;
 the five most recent entries appear in the tray menu — click one to type it again.
@@ -132,6 +137,10 @@ System Settings → Privacy & Security — the app (or your terminal, when using
 
 1. **Microphone** — to hear you
 2. **Accessibility** — to type the transcribed text into other apps
+3. **Input Monitoring** — to detect the Fn / 🌐 Globe key
+
+Note: because dev builds are ad-hoc signed, every rebuild is a new identity to
+macOS, so these grants reset and have to be re-approved after rebuilding.
 
 ## Roadmap
 
