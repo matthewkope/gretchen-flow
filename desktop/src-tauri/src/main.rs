@@ -396,6 +396,68 @@ fn set_model(app: &AppHandle, name: &str) {
 }
 
 /// Open (or focus) the small "press your shortcut" recorder window.
+/// On startup, ask macOS for Accessibility + Microphone so Gretchen Flow shows
+/// up in those Privacy lists (to be toggled on) instead of only appearing after
+/// the first dictation. Input Monitoring already self-registers via the Fn tap.
+fn request_startup_permissions(_app: &AppHandle) {
+    prompt_accessibility();
+    request_microphone();
+}
+
+/// Ask macOS for microphone access via the canonical API. This registers the
+/// app under Privacy ▸ Microphone and shows the prompt (when "not determined"),
+/// and is a no-op once already granted/denied.
+fn request_microphone() {
+    use block2::RcBlock;
+    use objc2::msg_send;
+    use objc2::runtime::{AnyClass, Bool};
+    use objc2_foundation::NSString;
+    #[link(name = "AVFoundation", kind = "framework")]
+    extern "C" {
+        static AVMediaTypeAudio: *const NSString;
+    }
+    let Some(cls) = AnyClass::get(c"AVCaptureDevice") else {
+        log::warn!("AVCaptureDevice unavailable; cannot request microphone");
+        return;
+    };
+    let Some(media) = (unsafe { AVMediaTypeAudio.as_ref() }) else {
+        return;
+    };
+    // requestAccess copies the block, so the RcBlock can drop after this call.
+    let handler = RcBlock::new(|granted: Bool| {
+        log::info!(
+            "microphone access {}",
+            if granted.as_bool() { "granted" } else { "denied" }
+        );
+    });
+    let _: () =
+        unsafe { msg_send![cls, requestAccessForMediaType: media, completionHandler: &*handler] };
+}
+
+/// Trigger the Accessibility trust prompt, which also lists the app under
+/// Privacy ▸ Accessibility. No-op once already trusted.
+fn prompt_accessibility() {
+    use core_foundation::base::TCFType;
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
+    use core_foundation::string::{CFString, CFStringRef};
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        fn AXIsProcessTrusted() -> bool;
+        fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
+        static kAXTrustedCheckOptionPrompt: CFStringRef;
+    }
+    unsafe {
+        if AXIsProcessTrusted() {
+            return;
+        }
+        let key = CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt);
+        let opts =
+            CFDictionary::from_CFType_pairs(&[(key.as_CFType(), CFBoolean::true_value().as_CFType())]);
+        AXIsProcessTrustedWithOptions(opts.as_concrete_TypeRef());
+    }
+}
+
 fn open_hotkey_window(app: &AppHandle) {
     activate_app();
     if let Some(window) = app.get_webview_window("hotkey") {
@@ -1306,6 +1368,11 @@ fn main() {
                     .on_shortcut(*shortcut, |app, _sc, event| on_shortcut(app, event.state()))?;
             }
             spawn_fn_listener(app.handle().clone());
+
+            // Proactively ask for Accessibility + Microphone so the app shows up
+            // in those Privacy lists for the user to toggle on, rather than only
+            // appearing after first use.
+            request_startup_permissions(app.handle());
 
             load_engine_async(app.handle().clone());
             Ok(())

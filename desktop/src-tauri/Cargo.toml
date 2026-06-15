@@ -1,6 +1,6 @@
 [package]
 name = "gretchen-flow"
-version = "0.2.2"
+version = "0.2.3"
 description = "Push-to-talk voice dictation: press a hotkey, speak, and your words appear wherever your cursor is."
 authors = ["Matthew Kope"]
 license = "MIT"
@@ -20,6 +20,7 @@ core-foundation = "0.10"
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
+block2 = "0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6"
