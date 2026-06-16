@@ -427,7 +427,11 @@ fn request_microphone() {
     let handler = RcBlock::new(|granted: Bool| {
         log::info!(
             "microphone access {}",
-            if granted.as_bool() { "granted" } else { "denied" }
+            if granted.as_bool() {
+                "granted"
+            } else {
+                "denied"
+            }
         );
     });
     let _: () =
@@ -452,8 +456,10 @@ fn prompt_accessibility() {
             return;
         }
         let key = CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt);
-        let opts =
-            CFDictionary::from_CFType_pairs(&[(key.as_CFType(), CFBoolean::true_value().as_CFType())]);
+        let opts = CFDictionary::from_CFType_pairs(&[(
+            key.as_CFType(),
+            CFBoolean::true_value().as_CFType(),
+        )]);
         AXIsProcessTrustedWithOptions(opts.as_concrete_TypeRef());
     }
 }
