@@ -20,6 +20,7 @@ never leaves the machine, **no API keys, no cloud**. Keep it that way.
 cd desktop/src-tauri
 cargo run                 # dev: raw unsigned binary (fast iteration)
 cargo build               # compile-check
+cargo fmt                 # ALWAYS run before pushing — CI fails on unformatted code
 cargo clippy              # keep clean (0 warnings)
 cargo test                # transcribe.rs has the test suite
 cargo tauri build --debug # produce a signed .app bundle + DMG
@@ -27,6 +28,11 @@ cargo tauri build --debug # produce a signed .app bundle + DMG
 uv run desktop/scripts/gen_icons.py   # regenerate icons (from repo root)
 cd python && uv run pytest            # prototype tests
 ```
+
+**Before pushing:** run `cargo fmt`. The `ci.yml` `desktop` job runs
+`cargo fmt --check` and goes red on any unformatted code (this happened on
+v0.2.3 and spammed failed-CI notifications). `release.yml` only builds the DMG,
+so a format failure does NOT break a release — but keep `main` green.
 
 To test the **bundled** app (Dock icon, status item behavior), build the bundle
 and run `/Applications/Gretchen Flow.app` — the raw `cargo run` binary has the
