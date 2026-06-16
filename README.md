@@ -142,6 +142,47 @@ System Settings → Privacy & Security — the app (or your terminal, when using
 Note: because dev builds are ad-hoc signed, every rebuild is a new identity to
 macOS, so these grants reset and have to be re-approved after rebuilding.
 
+## Memory footprint
+
+Gretchen Flow is a [Tauri](https://tauri.app) app, so it runs as a **single
+process** using macOS's built-in WebView (WKWebView) instead of bundling a
+browser. That makes its idle footprint tiny compared to Electron-based dictation
+apps.
+
+Measured on an Apple Silicon Mac with `ps -axo rss=,comm=` (resident set size,
+summed per app), against **Wispr Flow** (Electron):
+
+| | Engine | Processes | Base RAM (app shell) |
+|---|---|---|---|
+| **Gretchen Flow** | Tauri (native WKWebView) | 1 | **~64–150 MB** |
+| **Wispr Flow** | Electron (bundled Chromium) | 11 | **~1,372 MB** |
+
+Wispr Flow's number is summed across all of its processes (main Electron
+~457 MB + renderer / GPU / plugin helpers + a Swift helper) — and that's with
+**no local model**, since Wispr transcribes in the cloud. Gretchen's shell is
+roughly **10–20× lighter**; that's the Tauri-vs-Electron gap in the extreme, as
+each Electron app ships and runs its own copy of Chromium plus a swarm of helper
+processes.
+
+The trade-off is that Gretchen transcribes **on-device**, so it loads the
+Whisper model into memory on top of the shell:
+
+| Model | Total app RAM (approx) |
+|---|---|
+| `base` | ~0.25 GB |
+| `small` | ~0.55 GB |
+| `large-v3-turbo-q5_0` (recommended) | ~0.65 GB |
+| `large-v3-turbo` (full) | ~1.6 GB |
+
+So at **idle** Gretchen uses a fraction of Wispr's RAM (~100 MB vs ~1.37 GB);
+while **actively transcribing** with the recommended quantized model (~0.65 GB)
+it still uses *less* RAM than Wispr's cloud shell (~1.37 GB) — while keeping your
+audio entirely on your machine.
+
+> The model's Metal buffers move in and out of RSS, so the measured figure
+> fluctuates between the shell size (~64 MB) and the full model size (~1.6 GB
+> with `large-v3-turbo` right after a transcription).
+
 ## Roadmap
 
 - [ ] Settings window (model picker, shortcut recorder, dictionary editor)
