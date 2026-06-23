@@ -37,11 +37,36 @@ Apple Silicon Mac, macOS 12+ — one command (it taps and installs):
 brew install --cask matthewkope/gretchen-flow/gretchen-flow
 ```
 
-To update later: `brew upgrade --cask gretchen-flow`.
+This copies **Gretchen Flow.app** into `/Applications`. Because the build isn't
+notarized, macOS quarantines it — so after installing, clear the quarantine flag
+and launch it:
+
+```bash
+brew list --cask gretchen-flow      # confirm it installed
+xattr -dr com.apple.quarantine "/Applications/Gretchen Flow.app"
+open "/Applications/Gretchen Flow.app"
+```
+
+On first launch, download a model in the setup window and grant **Microphone**,
+**Accessibility**, and **Input Monitoring** in System Settings — see
+[macOS permissions](#macos-permissions) below.
+
+### Updating
+
+```bash
+brew update
+brew upgrade --cask gretchen-flow
+xattr -dr com.apple.quarantine "/Applications/Gretchen Flow.app"
+open "/Applications/Gretchen Flow.app"
+```
+
+Releases are signed with a stable certificate, so your Microphone /
+Accessibility / Input Monitoring grants carry over — updating does **not** make
+you re-approve them.
 
 > The cask installs from the latest [GitHub Release](https://github.com/matthewkope/gretchen-flow/releases).
-> Builds are not yet notarized — if macOS blocks the app on first launch, run
-> `xattr -dr com.apple.quarantine "/Applications/Gretchen Flow.app"`.
+> Builds are not notarized, which is why the one-time `xattr` command above is
+> needed if macOS blocks the app on launch.
 
 ## Build from source
 
