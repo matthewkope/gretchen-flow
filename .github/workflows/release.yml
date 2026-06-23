@@ -30,8 +30,38 @@ jobs:
         run: |
           brew install cmake
           cargo install tauri-cli --version "^2" --locked
-      - name: Build app + DMG
-        run: cargo tauri build
+      # Import the stable self-signed code-signing certificate into a temporary
+      # keychain. Signing every release with the SAME cert keeps the app's code
+      # identity constant, so users' macOS permissions (Microphone,
+      # Accessibility, Input Monitoring) survive `brew upgrade` instead of
+      # resetting on each update. The cert is self-signed (not notarized), so
+      # Gatekeeper still shows the unverified-developer prompt on first install
+      # (handled by the cask's xattr caveat).
+      - name: Import signing certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/gf-signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Prepend our keychain to the search list so codesign finds the cert.
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | sed s/\"//g)
+          rm -f "$RUNNER_TEMP/cert.p12"
+      - name: Build app + DMG (signed)
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        run: |
+          cargo tauri build --config \
+            "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"$SIGNING_IDENTITY\"}}}"
       - name: Publish release with DMG
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:

@@ -149,12 +149,26 @@ fn stop_and_transcribe(app: &AppHandle) {
         let mut samples = audio::resample_to_16k(&recording);
         // Silence gate: a near-silent clip (hotkey tapped with nothing said)
         // makes Whisper hallucinate stock phrases, so drop it and type nothing.
+        // Threshold is well above the noise floor of a muted/denied mic (~0)
+        // but below real speech from a low-gain built-in mic (~0.005+).
         let rms = (samples.iter().map(|s| s * s).sum::<f32>() / samples.len().max(1) as f32).sqrt();
-        const SILENCE_RMS: f32 = 0.01;
+        const SILENCE_RMS: f32 = 0.0015;
         if rms < SILENCE_RMS {
             log::info!("clip is silent (rms {rms:.4}); typing nothing");
             set_tray_state(&app, TrayState::Idle);
             return;
+        }
+        // Auto-gain: built-in mics are far quieter than a headset, and Whisper
+        // transcribes a healthy-level signal more reliably. Scale the clip up to
+        // a target RMS (capped so we don't blow up pure noise), then clamp.
+        const TARGET_RMS: f32 = 0.05;
+        const MAX_GAIN: f32 = 12.0;
+        let gain = (TARGET_RMS / rms).min(MAX_GAIN);
+        if gain > 1.0 {
+            for s in samples.iter_mut() {
+                *s = (*s * gain).clamp(-1.0, 1.0);
+            }
+            log::debug!("applied input gain x{gain:.1} (rms {rms:.4})");
         }
         // Whisper rejects clips under 1 s — pad short ones with silence.
         const MIN_SAMPLES: usize = 17_600; // 1.1 s at 16 kHz

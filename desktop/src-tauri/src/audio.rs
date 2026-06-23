@@ -8,6 +8,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{FromSample, Sample, SampleFormat, SizedSample};
 
 pub struct Recording {
     /// Mono PCM at `sample_rate`.
@@ -82,24 +83,56 @@ fn build_stream(
     let device = host
         .default_input_device()
         .ok_or("no default input device")?;
+    let name = device.name().unwrap_or_else(|_| "<unknown>".into());
     let config = device.default_input_config()?;
     let rate = config.sample_rate().0;
     let channels = config.channels() as usize;
+    let format = config.sample_format();
+    log::info!("opening input '{name}' rate={rate} ch={channels} fmt={format:?}");
 
-    let stream = device.build_input_stream(
-        &config.into(),
-        move |data: &[f32], _| {
+    let cfg: cpal::StreamConfig = config.into();
+    // Capture in whatever native sample format the device reports, converting
+    // each frame to mono f32. Hardcoding f32 broke on devices (e.g. the
+    // built-in mic) whose native format is integer PCM.
+    let stream = match format {
+        SampleFormat::F32 => build_typed::<f32>(&device, &cfg, channels, buffer)?,
+        SampleFormat::I16 => build_typed::<i16>(&device, &cfg, channels, buffer)?,
+        SampleFormat::U16 => build_typed::<u16>(&device, &cfg, channels, buffer)?,
+        SampleFormat::I8 => build_typed::<i8>(&device, &cfg, channels, buffer)?,
+        SampleFormat::I32 => build_typed::<i32>(&device, &cfg, channels, buffer)?,
+        SampleFormat::U8 => build_typed::<u8>(&device, &cfg, channels, buffer)?,
+        other => {
+            return Err(format!("unsupported input sample format {other:?}").into());
+        }
+    };
+    stream.play()?;
+    Ok((stream, rate))
+}
+
+/// Build an input stream for a concrete sample type, downmixing interleaved
+/// frames to mono f32 into `buffer`.
+fn build_typed<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    channels: usize,
+    buffer: Arc<Mutex<Vec<f32>>>,
+) -> Result<cpal::Stream, cpal::BuildStreamError>
+where
+    T: SizedSample,
+    f32: FromSample<T>,
+{
+    device.build_input_stream(
+        config,
+        move |data: &[T], _| {
             let mut buf = buffer.lock().unwrap();
-            // Downmix interleaved frames to mono.
             for frame in data.chunks(channels) {
-                buf.push(frame.iter().sum::<f32>() / channels as f32);
+                let sum: f32 = frame.iter().map(|s| f32::from_sample(*s)).sum();
+                buf.push(sum / channels as f32);
             }
         },
         |err| log::error!("audio stream error: {err}"),
         None,
-    )?;
-    stream.play()?;
-    Ok((stream, rate))
+    )
 }
 
 /// Linear resample to 16 kHz mono for Whisper.

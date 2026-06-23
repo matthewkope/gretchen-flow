@@ -139,8 +139,29 @@ System Settings → Privacy & Security — the app (or your terminal, when using
 2. **Accessibility** — to type the transcribed text into other apps
 3. **Input Monitoring** — to detect the Fn / 🌐 Globe key
 
-Note: because dev builds are ad-hoc signed, every rebuild is a new identity to
-macOS, so these grants reset and have to be re-approved after rebuilding.
+You grant these **once**. Released builds (the Homebrew cask) are signed with a
+stable certificate, so macOS keeps your grants across `brew upgrade` — updating
+the app does **not** make you re-approve them.
+
+> Building from source is different: a plain `cargo run` / `cargo tauri build`
+> is ad-hoc signed, so every rebuild is a new identity and the grants reset. If
+> you're hacking on the app, use `desktop/scripts/dev-build.sh`, which signs
+> each build with a stable local certificate so your grants persist between
+> rebuilds (one-time setup: a self-signed "Gretchen Flow Signing" code-signing
+> certificate in your keychain).
+
+### The Fn / 🌐 Globe key vs. macOS Dictation
+
+By default macOS binds the **🌐 Globe (Fn)** key to its own **Dictation**
+feature, which intercepts the key and pops up Apple's dictation bubble — so
+Gretchen never sees the press. If holding Fn does nothing (or a macOS dictation
+popup appears), turn Apple's Dictation off and free the key:
+
+- **System Settings ▸ Keyboard ▸ Dictation** → **Off**
+- **System Settings ▸ Keyboard ▸ "Press 🌐 key to"** → anything except
+  *Start Dictation* (e.g. *Do Nothing*)
+
+Or just use one of your own custom shortcuts instead of Fn.
 
 ## Memory footprint
 
