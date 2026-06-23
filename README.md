@@ -231,6 +231,12 @@ audio entirely on your machine.
 
 ## Roadmap
 
+- [ ] **Fix Fn / 🌐 Globe dictation** — make hold-to-talk on the Globe key work
+      without having to turn off macOS Dictation first (today the system
+      intercepts the key)
+- [ ] **Coexist with the Globe key's built-in functions** — hold Globe to
+      dictate while a normal tap still opens the Emoji & Symbols picker (and
+      input-source switching), so you keep both
 - [ ] Settings window (model picker, shortcut recorder, dictionary editor)
 - [ ] Streaming transcription (text appears while you speak)
 - [ ] Self-correction cleanup ("Tuesday — no wait, Wednesday" → "Wednesday")
