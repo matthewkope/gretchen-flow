@@ -18,6 +18,7 @@
         background: rgba(127, 127, 127, 0.15);
       }
       #error { color: #ff453a; font-size: 12px; min-height: 16px; margin: 0; }
+      #note { opacity: 0.55; font-size: 11px; min-height: 14px; margin: 0; text-align: center; padding: 0 16px; }
       .row { display: flex; gap: 10px; }
       button {
         font-size: 13px; padding: 6px 18px; border-radius: 7px;
@@ -29,9 +30,10 @@
     </style>
   </head>
   <body>
-    <p id="prompt">Press the key combination you want to add</p>
+    <p id="prompt">Press any key or combination to add</p>
     <div id="combo">…</div>
     <p id="error"></p>
+    <p id="note"></p>
     <div class="row">
       <button id="cancel">Cancel</button>
       <button id="remove" style="display:none">Remove</button>

@@ -33,7 +33,9 @@ BUNDLE="$TAURI_DIR/target/debug/bundle/macos/$APP_NAME"
 ENTITLEMENTS="$TAURI_DIR/entitlements.plist"
 INSTALLED="/Applications/$APP_NAME"
 
-if ! security find-identity -v -p codesigning | grep -q "$CERT"; then
+# NOTE: no -v — a self-signed cert is "not trusted", so `-v` (valid only) hides
+# it even though codesign signs with it fine.
+if ! security find-identity -p codesigning | grep -q "$CERT"; then
   echo "error: code-signing certificate \"$CERT\" not found in the keychain." >&2
   echo "Create it via Keychain Access ▸ Certificate Assistant ▸ Create a Certificate" >&2
   echo "(name it exactly \"$CERT\", type: Code Signing), then re-run." >&2

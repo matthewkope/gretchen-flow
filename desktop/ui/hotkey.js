@@ -1,6 +1,7 @@
 const { invoke } = window.__TAURI__.core;
 const combo = document.getElementById("combo");
 const error = document.getElementById("error");
+const note = document.getElementById("note");
 const save = document.getElementById("save");
 let accel = null;
 
@@ -26,6 +27,7 @@ window.addEventListener("keydown", (e) => {
   e.preventDefault();
   if (e.key === "Escape") { invoke("cancel_custom_hotkey"); return; }
   error.textContent = "";
+  note.textContent = "";
   const mods = [];
   if (e.metaKey) mods.push("Cmd");
   if (e.ctrlKey) mods.push("Ctrl");
@@ -39,15 +41,15 @@ window.addEventListener("keydown", (e) => {
     save.disabled = true; accel = null;
     return;
   }
-  if (!mods.length && !/^F\d+$/.test(key)) {
-    combo.textContent = "…";
-    error.textContent = "Add a modifier (⌘ ⌃ ⌥ ⇧) or use an F-key";
-    save.disabled = true; accel = null;
-    return;
-  }
+  // A single key (no modifier) is allowed — handy for a dedicated push-to-talk
+  // key. Warn that a bare letter/digit/punctuation key gets captured globally
+  // so it won't type normally while it's your hotkey (F-keys are usually safe).
   accel = [...mods, key].join("+");
-  combo.textContent = mods.map((m) => SYMBOLS[m]).join("") + " " + key;
+  combo.textContent = (mods.length ? mods.map((m) => SYMBOLS[m]).join("") + " " : "") + key;
   save.disabled = false;
+  if (!mods.length && !/^F\d+$/.test(key)) {
+    note.textContent = `“${key}” will be a dedicated hotkey — it won’t type normally while set`;
+  }
 });
 
 save.onclick = () => {
@@ -71,7 +73,7 @@ invoke("hotkey_replace_target").then((target) => {
   if (!target) return;
   const shown = target === "Fn" ? "Fn 🌐" : target;
   document.getElementById("prompt").textContent =
-    "Press a new combination to replace " + shown;
+    "Press a new key or combination to replace " + shown;
   save.textContent = "Save Shortcut";
   document.getElementById("remove").style.display = "";
   document.title = "Change Shortcut — Gretchen Flow";
