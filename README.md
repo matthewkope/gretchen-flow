@@ -31,7 +31,7 @@ editor, browser, chat, anywhere.
 
 ## Install with Homebrew
 
-Apple Silicon Mac, macOS 14+ for the source version (the published 0.2.5 cask still uses Whisper) — one command (it taps and installs):
+Apple Silicon Mac, macOS 14+ — one command (it taps and installs):
 
 ```bash
 brew install --cask matthewkope/gretchen-flow/gretchen-flow
@@ -232,7 +232,7 @@ cd python && uv sync && uv run pytest # the prototype
 
 ### Building the Parakeet version
 
-The source version is 0.3.0 and requires Apple Silicon, macOS 14+, and Swift
+Version 0.3.0 requires Apple Silicon, macOS 14+, and Swift
 6.2+ (Xcode 26.2 works). `cargo tauri build` / `cargo tauri dev` builds and
 bundles the pinned native Parakeet helper automatically. For raw `cargo run`,
 first run `desktop/scripts/build-parakeet.sh` from the repository root.
@@ -240,5 +240,6 @@ Model weights download separately and remain local. Parakeet controls its own
 punctuation; thinking pauses can still produce unwanted periods. This update
 does not claim to fix that behavior. See [benchmark results](docs/ASR_BENCHMARK_2026-09-18.md).
 
-The existing Homebrew cask still points at published v0.2.5 until a new release
-DMG and its checksum are published.
+The Homebrew cask downloads the signed v0.3.0 release DMG and verifies its
+SHA-256 checksum. Existing explicit model choices are kept; select Parakeet v2
+from the Model menu to change an older Whisper configuration.
