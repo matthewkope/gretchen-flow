@@ -6,12 +6,20 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub const DEFAULT_MODEL: &str = "parakeet-tdt-0.6b-v2";
+
+pub fn storage_name() -> &'static str {
+    if cfg!(feature = "test-build") {
+        "gretchen-flow-test"
+    } else {
+        "gretchen-flow"
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// ggml model name from ggerganov/whisper.cpp (e.g. "large-v3-turbo-q5_0")
-    /// or an absolute path to a model file. Empty on a fresh install — the app
-    /// ships with no model and guides the user to download one.
+    /// Parakeet v2 (default), a ggml Whisper model name, or an absolute ggml path.
     pub model: String,
     /// Language code, or "auto" to detect.
     pub language: String,
@@ -42,8 +50,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            // Quantized large-v3-turbo: near-flagship accuracy at ~574 MB.
-            model: String::new(),
+            model: DEFAULT_MODEL.into(),
             language: "en".into(),
             // Fn/Globe is the default push-to-talk key; users add up to 2 more.
             shortcuts: vec!["Fn".into()],
@@ -61,7 +68,9 @@ impl Default for Config {
 pub fn config_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".config/gretchen-flow/config.json")
+        .join(".config")
+        .join(storage_name())
+        .join("config.json")
 }
 
 impl Config {
@@ -69,7 +78,13 @@ impl Config {
         let path = config_path();
         std::fs::read_to_string(&path)
             .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
+            .and_then(|s| serde_json::from_str::<Self>(&s).ok())
+            .map(|mut cfg| {
+                if cfg.model.is_empty() {
+                    cfg.model = DEFAULT_MODEL.into();
+                }
+                cfg
+            })
             .unwrap_or_default()
     }
 
@@ -81,5 +96,25 @@ impl Config {
         if let Ok(json) = serde_json::to_string_pretty(self) {
             let _ = std::fs::write(path, json + "\n");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn new_config_defaults_to_parakeet() {
+        assert_eq!(Config::default().model, DEFAULT_MODEL);
+        assert_eq!(
+            serde_json::from_str::<Config>("{}").unwrap().model,
+            DEFAULT_MODEL
+        );
+    }
+    #[test]
+    fn explicit_whisper_choice_and_unknown_settings_survive() {
+        let cfg: Config =
+            serde_json::from_str(r#"{"model":"large-v3-turbo","custom":true}"#).unwrap();
+        assert_eq!(cfg.model, "large-v3-turbo");
+        assert_eq!(serde_json::to_value(cfg).unwrap()["custom"], true);
     }
 }

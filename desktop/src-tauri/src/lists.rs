@@ -108,7 +108,9 @@ fn parse_marker(sentence: &str) -> Option<(Marker, Option<String>)> {
 }
 
 fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
-    if s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix) {
+    if s.get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
+    {
         Some(&s[prefix.len()..])
     } else {
         None
@@ -170,6 +172,7 @@ fn collect_list(sentences: &[String], start: usize) -> Option<(Vec<String>, usiz
             _ => None,
         };
         let Some(rest) = matches_expected else { break };
+        let item_start = j;
         j += 1;
         let mut item = rest.unwrap_or_default();
         // Sentences up to the next marker belong to the current item.
@@ -181,6 +184,7 @@ fn collect_list(sentences: &[String], start: usize) -> Option<(Vec<String>, usiz
             j += 1;
         }
         if item.is_empty() {
+            j = item_start;
             break; // a dangling marker with no content isn't a list item
         }
         items.push(capitalized(&item));
@@ -229,6 +233,25 @@ pub fn format_lists(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unicode_prefix_boundaries_do_not_panic() {
+        for text in ["Hello 世界你好", "你好世界", "🙂🙂 hello", "éclair café"] {
+            assert_eq!(format_lists(text), text);
+        }
+    }
+
+    #[test]
+    fn dangling_markers_are_not_consumed() {
+        assert_eq!(
+            format_lists("One, eat. Two, sleep. Three."),
+            "1. Eat.\n2. Sleep.\nThree."
+        );
+        assert_eq!(
+            format_lists("One, eat. Two, sleep. Three. Four, run."),
+            "1. Eat.\n2. Sleep.\nThree. Four, run."
+        );
+    }
 
     #[test]
     fn inline_cardinals_with_commas() {

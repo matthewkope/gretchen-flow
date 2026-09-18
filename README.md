@@ -4,7 +4,7 @@
 
 Gretchen Flow is an open-source voice dictation app in the spirit of Wispr Flow:
 a global hotkey starts recording, your speech is transcribed locally with
-Whisper, and the text is typed straight into whatever app has focus — your
+Parakeet v2 by default, and the text is typed straight into whatever app has focus — your
 editor, browser, chat, anywhere.
 
 - 👧 **Gretchen lives in the menu bar** — a white Gretchen when idle; while recording she shows a black badge, next to macOS's own orange mic indicator
@@ -17,7 +17,7 @@ editor, browser, chat, anywhere.
   spelled right
 - 🕘 **History** — recent dictations live in the tray menu; click one to type it again
 - 🔒 **Local-first** — audio never leaves your machine
-- 🎯 **Accurate and lightweight** — quantized Whisper large-v3-turbo (~574 MB)
+- 🎯 **Accurate and lightweight** — Parakeet TDT v2 (~464 MB), with optional Whisper models
   with Metal acceleration on Apple Silicon
 - 🦀 **Native** — Tauri 2 + Rust; small binary, low latency
 
@@ -31,7 +31,7 @@ editor, browser, chat, anywhere.
 
 ## Install with Homebrew
 
-Apple Silicon Mac, macOS 12+ — one command (it taps and installs):
+Apple Silicon Mac, macOS 14+ for the source version (the published 0.2.5 cask still uses Whisper) — one command (it taps and installs):
 
 ```bash
 brew install --cask matthewkope/gretchen-flow/gretchen-flow
@@ -70,12 +70,13 @@ you re-approve them.
 
 ## Build from source
 
-Requires [Rust](https://rustup.rs) and cmake (`brew install cmake`).
+Requires Apple Silicon, macOS 14+, Swift 6.2+, [Rust](https://rustup.rs),
+cmake (`brew install cmake`), and Tauri CLI (`cargo install tauri-cli --locked`).
 
 ```bash
 git clone https://github.com/matthewkope/gretchen-flow.git
 cd gretchen-flow/desktop/src-tauri
-cargo run
+cargo tauri dev
 ```
 
 ## First run — download a model
@@ -84,9 +85,9 @@ cargo run
 On first launch a **setup window** opens (the menu bar icon shows a small **!**
 until a model is ready). To get going:
 
-1. Click **Download Recommended Model (547 MB)** in the setup window — or open
+1. Click **Download Recommended Model (464 MB)** in the setup window — or open
    the menu bar icon's **Model** submenu and choose one. The recommended
-   **Large v3 Turbo (quantized)** is the best balance of accuracy and size.
+   **Parakeet TDT v2** is the English default; Whisper remains available.
    The Gretchen icon shows a **↓** while it downloads.
 2. **Grant permissions** under System Settings ▸ Privacy & Security — the setup
    window has a button for each: **Microphone** (to hear you), **Accessibility**
@@ -115,7 +116,7 @@ hidden.
 
 ```json
 {
-  "model": "large-v3-turbo-q5_0",
+  "model": "parakeet-tdt-0.6b-v2",
   "language": "en",
   "shortcuts": ["Fn"],
   "hotkey_mode": "hold",
@@ -126,10 +127,11 @@ hidden.
 }
 ```
 
-- `model`: empty on a fresh install (pick one from the **Model** menu, which
-  downloads it). Accepts any ggml model name from
+- `model`: defaults to `parakeet-tdt-0.6b-v2` (~464 MB, English only).
+  Existing explicit model selections are preserved; select Parakeet from the
+  **Model** menu to switch. Whisper files are not deleted. Also accepts ggml model names from
   [whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp) —
-  `large-v3-turbo-q5_0` (recommended, ~547 MB), `large-v3-turbo` (~1.6 GB),
+  `large-v3-turbo-q5_0` (~547 MB), `large-v3-turbo` (~1.6 GB),
   `small` (~466 MB), `base` (~142 MB) — or an absolute path to a local
   `.bin`/`.gguf` model file (also selectable via **Model ▸ Model from File…**)
 - `hotkey_mode`: `"hold"` (push-to-talk — records while held, default) or `"toggle"` (tap to start/stop)
@@ -138,14 +140,14 @@ hidden.
   like `"Cmd+Shift+D"`, except `"Fn"` which is the special Globe key. Add, change
   (click a shortcut to re-record it), or remove them from the window's
   **Shortcuts** section — changes save here immediately
-- `pause_punctuation_ms`: pausing this long while speaking inserts a period and
+- `pause_punctuation_ms` (Whisper only): pausing this long while speaking inserts a period and
   capitalizes the next sentence (smaller models often skip punctuation; this
   recovers it from your speech rhythm). Set `0` to disable.
 - `remove_fillers`: strips "um", "uh", "hmm", etc. from the output
 - `auto_lists`: formats spoken lists ("one, … two, …" / "first, … second, …" /
   "number one, …") as numbered lines; conservative, so narrative sentences like
   "One day I went out" are left alone
-- `vocabulary`: words and phrases (names, jargon, brands) that recognition is
+- `vocabulary` (Whisper only): words and phrases (names, jargon, brands) that recognition is
   biased toward, so they come out spelled the way you wrote them
 
 Most settings can also be changed from the window/tray menu (model, shortcuts).
@@ -188,46 +190,16 @@ popup appears), turn Apple's Dictation off and free the key:
 
 Or just use one of your own custom shortcuts instead of Fn.
 
-## Memory footprint
+## Model size and memory
 
-Gretchen Flow is a [Tauri](https://tauri.app) app, so it runs as a **single
-process** using macOS's built-in WebView (WKWebView) instead of bundling a
-browser. That makes its idle footprint tiny compared to Electron-based dictation
-apps.
+Parakeet v2 uses about **464 MB of model files** (0.46 GB) on disk. Its native
+CoreML helper stays running alongside the Tauri app, keeping the model loaded
+between dictations. Runtime memory is higher than the model's disk size and
+varies with audio length and CoreML caches; a full app-plus-helper memory
+benchmark has not yet been established.
 
-Measured on an Apple Silicon Mac with `ps -axo rss=,comm=` (resident set size,
-summed per app), against **Wispr Flow** (Electron):
-
-| | Engine | Processes | Base RAM (app shell) |
-|---|---|---|---|
-| **Gretchen Flow** | Tauri (native WKWebView) | 1 | **~64–150 MB** |
-| **Wispr Flow** | Electron (bundled Chromium) | 11 | **~1,372 MB** |
-
-Wispr Flow's number is summed across all of its processes (main Electron
-~457 MB + renderer / GPU / plugin helpers + a Swift helper) — and that's with
-**no local model**, since Wispr transcribes in the cloud. Gretchen's shell is
-roughly **10–20× lighter**; that's the Tauri-vs-Electron gap in the extreme, as
-each Electron app ships and runs its own copy of Chromium plus a swarm of helper
-processes.
-
-The trade-off is that Gretchen transcribes **on-device**, so it loads the
-Whisper model into memory on top of the shell:
-
-| Model | Total app RAM (approx) |
-|---|---|
-| `base` | ~0.25 GB |
-| `small` | ~0.55 GB |
-| `large-v3-turbo-q5_0` (recommended) | ~0.65 GB |
-| `large-v3-turbo` (full) | ~1.6 GB |
-
-So at **idle** Gretchen uses a fraction of Wispr's RAM (~100 MB vs ~1.37 GB);
-while **actively transcribing** with the recommended quantized model (~0.65 GB)
-it still uses *less* RAM than Wispr's cloud shell (~1.37 GB) — while keeping your
-audio entirely on your machine.
-
-> The model's Metal buffers move in and out of RSS, so the measured figure
-> fluctuates between the shell size (~64 MB) and the full model size (~1.6 GB
-> with `large-v3-turbo` right after a transcription).
+Whisper models remain optional and are never deleted by switching defaults.
+The unquantized large-v3-turbo model is about 1.62 GB on disk.
 
 ## Roadmap
 
@@ -256,3 +228,17 @@ cd python && uv sync && uv run pytest # the prototype
 ## License
 
 [MIT](LICENSE)
+
+
+### Building the Parakeet version
+
+The source version is 0.3.0 and requires Apple Silicon, macOS 14+, and Swift
+6.2+ (Xcode 26.2 works). `cargo tauri build` / `cargo tauri dev` builds and
+bundles the pinned native Parakeet helper automatically. For raw `cargo run`,
+first run `desktop/scripts/build-parakeet.sh` from the repository root.
+Model weights download separately and remain local. Parakeet controls its own
+punctuation; thinking pauses can still produce unwanted periods. This update
+does not claim to fix that behavior. See [benchmark results](docs/ASR_BENCHMARK_2026-09-18.md).
+
+The existing Homebrew cask still points at published v0.2.5 until a new release
+DMG and its checksum are published.

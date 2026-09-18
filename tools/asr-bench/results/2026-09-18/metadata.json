@@ -1,0 +1,139 @@
+{
+  "hardware": "Apple M4 Pro, 24 GiB",
+  "os": "macOS-15.7.4-arm64-arm-64bit",
+  "python": "3.12.11",
+  "fluid_audio_revision": "b68f484789d81fda21efbf81e2ca9fcfd9dc22aa",
+  "parakeet_revision": "ee09c569f73759e6d44c9bd16766f477b2b36d39",
+  "moonshine_url": "https://download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21",
+  "corpus_revision": "5be91486e11a2d616f4ec5db8d3fd248585ac07a",
+  "artifacts": {
+    "ggml-large-v3-turbo.bin": {
+      "bytes": 1624555275,
+      "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
+    },
+    "parakeet-v2-coreml/Encoder.mlmodelc/metadata.json": {
+      "bytes": 2926,
+      "sha256": "58222fbc48c13c49d9715567803cd50cb9c23e4360462e0f8ffcea59a2c73c63"
+    },
+    "parakeet-v2-coreml/Encoder.mlmodelc/model.mil": {
+      "bytes": 959769,
+      "sha256": "ed7b19156ca29fa7dfd6891deb9fda4b0e8893f68597c985d135736546a43808"
+    },
+    "parakeet-v2-coreml/Encoder.mlmodelc/coremldata.bin": {
+      "bytes": 485,
+      "sha256": "4def7aa848599ad0e17a8b9a982edcdbf33cf92e1f4b798de32e2ca0bc74b030"
+    },
+    "parakeet-v2-coreml/Encoder.mlmodelc/weights/weight.bin": {
+      "bytes": 445187200,
+      "sha256": "4adc7ad44f9d05e1bffeb2b06d3bb02861a5c7602dff63a6b494aed3bf8a6c3e"
+    },
+    "parakeet-v2-coreml/Encoder.mlmodelc/analytics/coremldata.bin": {
+      "bytes": 243,
+      "sha256": "42e638870d73f26b332918a3496ce36793fbb413a81cbd3d16ba01328637a105"
+    },
+    "parakeet-v2-coreml/Decoder.mlmodelc/metadata.json": {
+      "bytes": 3427,
+      "sha256": "90a279b822496316458febc0ce761ab05954fadd9d66aa97bea077a35fc8f2b2"
+    },
+    "parakeet-v2-coreml/Decoder.mlmodelc/model.mil": {
+      "bytes": 13106,
+      "sha256": "7b95a5a6b672c652000348a67b6d4d92bb8e176b978c6666fe73c28a4d7ec579"
+    },
+    "parakeet-v2-coreml/Decoder.mlmodelc/coremldata.bin": {
+      "bytes": 554,
+      "sha256": "d200ca07694a347f6d02a3886a062ae839831e094e443222f2e48a14945966a8"
+    },
+    "parakeet-v2-coreml/Decoder.mlmodelc/weights/weight.bin": {
+      "bytes": 14429952,
+      "sha256": "27d26890221d82322c1092fd99d7b40578e435d5cf4b83c887c42603caf97aba"
+    },
+    "parakeet-v2-coreml/Decoder.mlmodelc/analytics/coremldata.bin": {
+      "bytes": 243,
+      "sha256": "46de1a6fe2e49d19a2125bc91acf020df7f2aea84ba821532aade8427a440b05"
+    },
+    "parakeet-v2-coreml/Preprocessor.mlmodelc/metadata.json": {
+      "bytes": 2974,
+      "sha256": "fb16c581ff5e1b962e7cb2181ed892cd32f9f84c12b6e80ff3e089f28e35bcbb"
+    },
+    "parakeet-v2-coreml/Preprocessor.mlmodelc/model.mil": {
+      "bytes": 27166,
+      "sha256": "3e06d16fd061294c8a75be68c43a3b1ed1f593d4a9c35249e9cdbccadc59721e"
+    },
+    "parakeet-v2-coreml/Preprocessor.mlmodelc/coremldata.bin": {
+      "bytes": 494,
+      "sha256": "d88ea1fc349459c9e100d6a96688c5b29a1f0d865f544be103001724b986b6d6"
+    },
+    "parakeet-v2-coreml/Preprocessor.mlmodelc/weights/weight.bin": {
+      "bytes": 298880,
+      "sha256": "a5f7df6c7f47147ae9486fe18cc7792f9a44d093ec3c6a11e91ef2dc363c48dc"
+    },
+    "parakeet-v2-coreml/Preprocessor.mlmodelc/analytics/coremldata.bin": {
+      "bytes": 243,
+      "sha256": "03ab3c1327a054c54c07a40325db967ec574f2c91dcc8192bfa44aa561bcf2d8"
+    },
+    "parakeet-v2-coreml/JointDecision.mlmodelc/metadata.json": {
+      "bytes": 2936,
+      "sha256": "ba8d309417b9acd4a175fdb15687de6a941db2f5b06666a60e7cf3cc8e2d3c3c"
+    },
+    "parakeet-v2-coreml/JointDecision.mlmodelc/model.mil": {
+      "bytes": 9722,
+      "sha256": "93bf82042235127cb81ab537dcae47a1c2e7e242ce4ffdaf772981b45eedc4f0"
+    },
+    "parakeet-v2-coreml/JointDecision.mlmodelc/coremldata.bin": {
+      "bytes": 534,
+      "sha256": "e2c6752f1c8cf2d3f6f26ec93195c9bfa759ad59edf9f806696a138154f96f11"
+    },
+    "parakeet-v2-coreml/JointDecision.mlmodelc/weights/weight.bin": {
+      "bytes": 3453388,
+      "sha256": "ca22a65903a05e64137677da608077578a8606090a598abf4875fa6199aaa19d"
+    },
+    "parakeet-v2-coreml/JointDecision.mlmodelc/analytics/coremldata.bin": {
+      "bytes": 243,
+      "sha256": "f1183ba213bb94a918c8d2cad19ab045320618f97f6ca662245b3936d7b090f7"
+    },
+    "parakeet-v2-coreml/parakeet_vocab.json": {
+      "bytes": 18762,
+      "sha256": "57019fe3c745772ca83a1b048a4bb951cd51329504ea33d4d83316b96e279a97"
+    },
+    "moonshine/download.moonshine.ai/model/spelling-en/spelling_cnn.ort": {
+      "bytes": 1664920,
+      "sha256": "79abb40b6849cf7c013e83a3f276a0d822bb94c3edcc9ad003d38815c2cf37d4"
+    },
+    "moonshine/download.moonshine.ai/model/spelling-en/spelling_cnn_meta.json": {
+      "bytes": 622,
+      "sha256": "1d297cb4801652ccea6cecfd2973338f7cfdf99b7b77a5f5988548cb77ff11f4"
+    },
+    "moonshine/download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/streaming_config.json": {
+      "bytes": 513,
+      "sha256": "28e83b7a28e91472692a035e0dae3116422ae43aeb2bef5ed822c44ce89b88af"
+    },
+    "moonshine/download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/encoder.ort": {
+      "bytes": 94705376,
+      "sha256": "12915e76ebac7dd287c5ea63965d06103a53ba1ce242a4a34f318f3958c60c37"
+    },
+    "moonshine/download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/decoder_kv.ort": {
+      "bytes": 146972408,
+      "sha256": "193bb366492b74fc4ad338c6778e8d8eb916aaa11b5aa264f9057f4db7759486"
+    },
+    "moonshine/download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/adapter.ort": {
+      "bytes": 3651296,
+      "sha256": "3f2a287def57cc094367a0eec3c4f5fc36a32ec420e86764b696920991b20281"
+    },
+    "moonshine/download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/frontend.weights.ort": {
+      "bytes": 11889560,
+      "sha256": "5ac941f490cbe035b335b99a414cc393d62d4c6f9f2423495b286870d271d709"
+    },
+    "moonshine/download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/cross_kv.ort": {
+      "bytes": 11643776,
+      "sha256": "642f6e21cd305be79342207c6f9e6b681d469d55bc48c72b27b84846fb71fd1e"
+    },
+    "moonshine/download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/tokenizer.bin": {
+      "bytes": 249974,
+      "sha256": "6884b35fd6377d4c4d32336a0bc152f36b64d1e45b6503683cdc238250a8472d"
+    },
+    "moonshine/download.moonshine.ai/model/medium-streaming-en/quantized_26_08_21/frontend.model.ort": {
+      "bytes": 28720,
+      "sha256": "95768855c70c8251eeecc05fedf69999da1b8ab16f605c9f457fd3354b0ad6b5"
+    }
+  }
+}

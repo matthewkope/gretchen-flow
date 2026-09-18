@@ -45,6 +45,11 @@ pub fn is_valid_model_name(name: &str) -> bool {
 }
 
 pub fn model_path(name: &str) -> PathBuf {
+    if name == crate::config::DEFAULT_MODEL {
+        return dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".cache/gretchen-flow/models/parakeet-tdt-0.6b-v2-coreml");
+    }
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".cache/gretchen-flow/models")
@@ -55,6 +60,9 @@ pub fn model_path(name: &str) -> PathBuf {
 /// as-is (user-supplied model files); names are downloaded from the
 /// whisper.cpp collection if needed.
 pub fn ensure_model(name: &str) -> Result<PathBuf, String> {
+    if name == crate::config::DEFAULT_MODEL {
+        return ensure_parakeet();
+    }
     if name.starts_with('/') {
         let path = PathBuf::from(name);
         return if path.exists() {
@@ -137,6 +145,38 @@ fn hex_lower(bytes: &[u8]) -> String {
         let _ = write!(s, "{b:02x}");
     }
     s
+}
+
+/// Fetch only the pinned CoreML exports used by our bundled runtime.
+fn ensure_parakeet() -> Result<PathBuf, String> {
+    static DOWNLOAD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = DOWNLOAD.lock().map_err(|_| "model download lock failed")?;
+    let root = model_path(crate::config::DEFAULT_MODEL);
+    let manifest: std::collections::BTreeMap<String, String> =
+        serde_json::from_str(include_str!("parakeet-model.json")).map_err(|e| e.to_string())?;
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(30))
+        .timeout_read(std::time::Duration::from_secs(120))
+        .build();
+    for (relative, hash) in manifest {
+        let path = root.join(&relative);
+        if path.is_file() && file_sha256(&path)? == hash {
+            continue;
+        }
+        fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+        let url = format!("https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml/resolve/ee09c569f73759e6d44c9bd16766f477b2b36d39/{relative}");
+        let response = agent.get(&url).call().map_err(|e| e.to_string())?;
+        let temp = path.with_extension("download-part");
+        let mut file = fs::File::create(&temp).map_err(|e| e.to_string())?;
+        std::io::copy(&mut response.into_reader(), &mut file).map_err(|e| e.to_string())?;
+        drop(file);
+        if file_sha256(&temp)? != hash {
+            let _ = fs::remove_file(&temp);
+            return Err(format!("Parakeet integrity check failed: {relative}"));
+        }
+        fs::rename(temp, path).map_err(|e| e.to_string())?;
+    }
+    Ok(root)
 }
 
 #[cfg(test)]

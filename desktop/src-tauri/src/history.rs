@@ -18,7 +18,8 @@ const HISTORY_CAP: usize = 200;
 pub fn history_path() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("gretchen-flow/history.jsonl")
+        .join(crate::config::storage_name())
+        .join("history.jsonl")
 }
 
 pub fn append(text: &str) {

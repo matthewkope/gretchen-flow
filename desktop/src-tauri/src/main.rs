@@ -8,13 +8,16 @@
 
 mod audio;
 mod config;
+mod engine;
 mod history;
 mod inject;
 mod lists;
 mod model;
+mod parakeet;
+mod self_test;
 mod transcribe;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tauri::image::Image;
@@ -42,33 +45,48 @@ enum TrayState {
 
 struct AppState {
     recorder: audio::Recorder,
-    engine: Arc<Mutex<Option<transcribe::Engine>>>,
+    engine: Arc<Mutex<Option<engine::Engine>>>,
     recording: AtomicBool,
+    engine_ready: AtomicBool,
+    model_generation: AtomicU64,
+    processing: AtomicBool,
     /// Active push-to-talk shortcuts (up to 3). "Fn" plus any registered
     /// accelerators. Editable from the menu/window.
     shortcuts: Mutex<Vec<String>>,
-    /// True while the Fn/Globe key is one of the active hotkeys.
-    fn_hotkey: AtomicBool,
+    /// Bitmask of CGEventFlags for bare-modifier hotkeys currently active
+    /// (Fn, Ctrl, Cmd, Alt, Shift) — driven by the low-level flags listener.
+    watched_flags: AtomicU64,
     /// When the recorder window is open to change an existing shortcut, this
     /// holds the accelerator being replaced (None means "add a new one").
     pending_replace: Mutex<Option<String>>,
     /// The active Whisper model name (changeable from the menu).
     current_model: Mutex<String>,
+    active_model: Mutex<String>,
     /// Live config; replaced wholesale by "Reload Config".
     cfg: Mutex<config::Config>,
     /// Full texts behind the tray's "Recent" items, newest first.
     history_items: Mutex<Vec<String>>,
 }
 
-/// Special hotkey value: the Fn/Globe key, watched by a low-level listener
-/// because macOS can't register it as a normal shortcut.
-const FN_HOTKEY: &str = "Fn";
+/// Bare modifier keys usable as push-to-talk hotkeys. Like Fn, macOS can't
+/// register a lone modifier as a global shortcut, so these are watched by the
+/// same low-level flagsChanged listener. Returns the CGEventFlags bit.
+fn bare_modifier_flag(accel: &str) -> Option<u64> {
+    match accel {
+        "Fn" => Some(1 << 23),    // kCGEventFlagMaskSecondaryFn
+        "Ctrl" => Some(1 << 18),  // kCGEventFlagMaskControl
+        "Cmd" => Some(1 << 20),   // kCGEventFlagMaskCommand
+        "Alt" => Some(1 << 19),   // kCGEventFlagMaskAlternate
+        "Shift" => Some(1 << 17), // kCGEventFlagMaskShift
+        _ => None,
+    }
+}
 
 /// Maximum number of simultaneous push-to-talk shortcuts.
 const MAX_SHORTCUTS: usize = 3;
 
 /// The model recommended to first-time users (best accuracy/size balance).
-const RECOMMENDED_MODEL: &str = "large-v3-turbo-q5_0";
+const RECOMMENDED_MODEL: &str = config::DEFAULT_MODEL;
 
 /// Hugging Face page listing every downloadable ggml whisper.cpp model.
 const MODELS_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/tree/main";
@@ -76,9 +94,10 @@ const MODELS_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/tree/main
 /// Whisper model choices offered in the tray menu: (ggml name, display label).
 const MODEL_CHOICES: &[(&str, &str)] = &[
     (
-        "large-v3-turbo-q5_0",
-        "Large v3 Turbo quantized — 547 MB (default)",
+        config::DEFAULT_MODEL,
+        "Parakeet v2 — fast English (default)",
     ),
+    ("large-v3-turbo-q5_0", "Large v3 Turbo quantized — 547 MB"),
     ("large-v3-turbo", "Large v3 Turbo — 1.6 GB, max accuracy"),
     ("small", "Small — 466 MB, lighter"),
     ("base", "Base — 142 MB, fastest"),
@@ -122,7 +141,10 @@ fn set_tray_state_on_main(app: &AppHandle, state: TrayState) {
 
 fn start_recording(app: &AppHandle) {
     let state = app.state::<AppState>();
-    if state.engine.lock().unwrap().is_none() {
+    if state.processing.load(Ordering::SeqCst) || state.recording.load(Ordering::SeqCst) {
+        return;
+    }
+    if !state.engine_ready.load(Ordering::SeqCst) {
         log::warn!("no model loaded; opening setup");
         show_setup(app);
         return;
@@ -134,18 +156,37 @@ fn start_recording(app: &AppHandle) {
 
 fn stop_and_transcribe(app: &AppHandle) {
     let state = app.state::<AppState>();
-    state.recording.store(false, Ordering::SeqCst);
-    let recording = state.recorder.stop();
-    let seconds = recording.samples.len() as f32 / recording.sample_rate as f32;
-    if seconds < 0.3 {
-        log::info!("recording too short ({seconds:.2}s), ignored");
-        set_tray_state(app, TrayState::Idle);
+    if !state.recording.swap(false, Ordering::SeqCst) {
         return;
     }
+    state.processing.store(true, Ordering::SeqCst);
+    // Queue stop now; waiting for the audio device must never block a hotkey callback.
+    let recording = state.recorder.stop_async();
     set_tray_state(app, TrayState::Transcribing);
-
     let app = app.clone();
     std::thread::spawn(move || {
+        struct Finished(AppHandle);
+        impl Drop for Finished {
+            fn drop(&mut self) {
+                set_tray_state(&self.0, TrayState::Idle);
+                self.0
+                    .state::<AppState>()
+                    .processing
+                    .store(false, Ordering::SeqCst);
+            }
+        }
+        let _finished = Finished(app.clone());
+        let recording = match recording.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(recording) => recording,
+            Err(e) => {
+                log::error!("microphone stop failed: {e}");
+                return;
+            }
+        };
+        let seconds = recording.samples.len() as f32 / recording.sample_rate as f32;
+        if seconds < 0.3 {
+            return;
+        }
         let mut samples = audio::resample_to_16k(&recording);
         // Silence gate: a near-silent clip (hotkey tapped with nothing said)
         // makes Whisper hallucinate stock phrases, so drop it and type nothing.
@@ -207,7 +248,7 @@ fn stop_and_transcribe(app: &AppHandle) {
 fn apply_shortcuts(app: &AppHandle, list: Vec<String>) -> Result<(), String> {
     // Validate every accelerator up front.
     for accel in &list {
-        if accel != FN_HOTKEY {
+        if bare_modifier_flag(accel).is_none() {
             accel
                 .parse::<Shortcut>()
                 .map_err(|e| format!("\"{accel}\" isn't a usable shortcut: {e}"))?;
@@ -216,10 +257,10 @@ fn apply_shortcuts(app: &AppHandle, list: Vec<String>) -> Result<(), String> {
 
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
-    let mut fn_on = false;
+    let mut watched: u64 = 0;
     for accel in &list {
-        if accel == FN_HOTKEY {
-            fn_on = true;
+        if let Some(flag) = bare_modifier_flag(accel) {
+            watched |= flag;
             continue;
         }
         if let Ok(sc) = accel.parse::<Shortcut>() {
@@ -230,7 +271,7 @@ fn apply_shortcuts(app: &AppHandle, list: Vec<String>) -> Result<(), String> {
     }
 
     let state = app.state::<AppState>();
-    state.fn_hotkey.store(fn_on, Ordering::SeqCst);
+    state.watched_flags.store(watched, Ordering::SeqCst);
     *state.shortcuts.lock().unwrap() = list.clone();
     let mut cfg = config::Config::load();
     cfg.shortcuts = list.clone();
@@ -255,10 +296,13 @@ fn add_shortcut(app: &AppHandle, accel: &str) -> Result<(), String> {
 
 /// Human-friendly label for a shortcut accelerator (e.g. the Fn/Globe key).
 fn hotkey_label(accel: &str) -> String {
-    if accel == FN_HOTKEY {
-        "Fn  (🌐 Globe key)".to_string()
-    } else {
-        accel.to_string()
+    match accel {
+        "Fn" => "Fn  (🌐 Globe key)".to_string(),
+        "Ctrl" => "⌃ Control  (held alone)".to_string(),
+        "Cmd" => "⌘ Command  (held alone)".to_string(),
+        "Alt" => "⌥ Option  (held alone)".to_string(),
+        "Shift" => "⇧ Shift  (held alone)".to_string(),
+        _ => accel.to_string(),
     }
 }
 
@@ -297,39 +341,39 @@ fn remove_shortcut(app: &AppHandle, accel: &str) {
     }
 }
 
-/// Watch the Fn/Globe key globally (it can't be a registered shortcut).
-/// A minimal CGEventTap on flagsChanged events only — no keyboard-layout
-/// lookups, so it's safe off the main thread. Always running; only acts
-/// while `fn_hotkey` is set.
+/// Watch bare-modifier hotkeys (Fn/Globe, Ctrl, Cmd, Alt, Shift) globally —
+/// none of them can be registered shortcuts. A minimal CGEventTap on
+/// flagsChanged events only — no keyboard-layout lookups, so it's safe off
+/// the main thread. Always running; only acts on flags in `watched_flags`.
 fn spawn_fn_listener(app: AppHandle) {
     use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
     use core_graphics::event::{
-        CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
-        CGEventType,
+        CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType,
     };
     use std::cell::Cell;
 
     std::thread::spawn(move || {
-        let fn_was_down = Cell::new(false);
+        let prev_flags = Cell::new(0u64);
         let tap = CGEventTap::new(
             CGEventTapLocation::Session,
             CGEventTapPlacement::HeadInsertEventTap,
             CGEventTapOptions::ListenOnly,
             vec![CGEventType::FlagsChanged],
             move |_proxy, _etype, event| {
-                let down = event
-                    .get_flags()
-                    .contains(CGEventFlags::CGEventFlagSecondaryFn);
-                if down != fn_was_down.get() {
-                    fn_was_down.set(down);
-                    if app.state::<AppState>().fn_hotkey.load(Ordering::SeqCst) {
-                        let shortcut_state = if down {
-                            ShortcutState::Pressed
-                        } else {
-                            ShortcutState::Released
-                        };
-                        on_shortcut(&app, shortcut_state);
-                    }
+                let now = event.get_flags().bits();
+                let before = prev_flags.get();
+                prev_flags.set(now);
+                let watched = app.state::<AppState>().watched_flags.load(Ordering::SeqCst);
+                let changed = (before ^ now) & watched;
+                if changed != 0 {
+                    // A watched modifier toggled. Pressed if any watched bit
+                    // is newly down; released when it comes back up.
+                    let shortcut_state = if now & changed != 0 {
+                        ShortcutState::Pressed
+                    } else {
+                        ShortcutState::Released
+                    };
+                    on_shortcut(&app, shortcut_state);
                 }
                 None
             },
@@ -361,16 +405,19 @@ fn set_model(app: &AppHandle, name: &str) {
         return;
     }
     let state = app.state::<AppState>();
-    let previous = {
+    let (previous, generation) = {
         let mut current = state.current_model.lock().unwrap();
         // Skip only if this model is already active and loaded; otherwise
         // (re)load so a missing/never-downloaded model still gets fetched.
-        if *current == name && state.engine.lock().unwrap().is_some() {
+        if *current == name && state.engine_ready.load(Ordering::SeqCst) {
             return;
         }
-        let previous = current.clone();
+        let previous = state.active_model.lock().unwrap().clone();
         *current = name.to_string();
-        previous
+        (
+            previous,
+            state.model_generation.fetch_add(1, Ordering::SeqCst) + 1,
+        )
     };
     let mut cfg = config::Config::load();
     cfg.model = name.to_string();
@@ -381,25 +428,34 @@ fn set_model(app: &AppHandle, name: &str) {
     let name = name.to_string();
     std::thread::spawn(move || {
         set_tray_state(&app, TrayState::Downloading);
-        let cfg = config::Config::load();
         let loaded = model::ensure_model(&name)
-            .and_then(|path| transcribe::Engine::load(&path.to_string_lossy(), &cfg));
+            .and_then(|path| engine::Engine::load(&path.to_string_lossy(), &cfg));
         let state = app.state::<AppState>();
+        let mut engine_slot = state.engine.lock().unwrap();
+        let mut current = state.current_model.lock().unwrap();
+        if state.model_generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
         match loaded {
             Ok(engine) => {
-                *state.engine.lock().unwrap() = Some(engine);
+                *engine_slot = Some(engine);
+                *state.active_model.lock().unwrap() = cfg.model.clone();
+                *state.cfg.lock().unwrap() = cfg.clone();
+                state.engine_ready.store(true, Ordering::SeqCst);
                 log::info!("switched model to {name}");
             }
             Err(e) => {
                 log::error!("model switch to {name} failed, keeping {previous}: {e}");
-                *state.current_model.lock().unwrap() = previous.clone();
+                *current = previous.clone();
                 let mut cfg = config::Config::load();
                 cfg.model = previous;
                 cfg.save();
             }
         }
+        drop(current);
+        drop(engine_slot);
         // Reflect the result: ready, or still no model.
-        let idle = if state.engine.lock().unwrap().is_some() {
+        let idle = if state.engine_ready.load(Ordering::SeqCst) {
             TrayState::Idle
         } else {
             TrayState::NeedsModel
@@ -593,7 +649,7 @@ fn menu_state(app: AppHandle) -> MenuState {
     let current_model = state.current_model.lock().unwrap().clone();
     let shortcuts = state.shortcuts.lock().unwrap().clone();
     let hotkey_mode = state.cfg.lock().unwrap().hotkey_mode.clone();
-    let has_engine = state.engine.lock().unwrap().is_some();
+    let has_engine = state.engine_ready.load(Ordering::SeqCst);
     let recent = history::recent(HISTORY_MENU_ITEMS);
 
     let models = MODEL_CHOICES
@@ -1040,7 +1096,7 @@ fn refresh_menu_on_main(app: &AppHandle) {
     let shortcuts = state.shortcuts.lock().unwrap().clone();
     let current_model = state.current_model.lock().unwrap().clone();
     let hotkey_mode = state.cfg.lock().unwrap().hotkey_mode.clone();
-    let has_engine = state.engine.lock().unwrap().is_some();
+    let has_engine = state.engine_ready.load(Ordering::SeqCst);
 
     MENU_HANDLES.with(|handles| {
         let handles = handles.borrow();
@@ -1211,6 +1267,11 @@ fn on_menu_event(app: &AppHandle, id: &str) {
 /// ships with no model and never auto-downloads — a missing model opens the
 /// setup guide instead.
 fn load_engine_async(app: AppHandle) {
+    let generation = {
+        let state = app.state::<AppState>();
+        let _current = state.current_model.lock().unwrap();
+        state.model_generation.fetch_add(1, Ordering::SeqCst) + 1
+    };
     std::thread::spawn(move || {
         let state = app.state::<AppState>();
         let cfg = state.cfg.lock().unwrap().clone();
@@ -1231,10 +1292,18 @@ fn load_engine_async(app: AppHandle) {
 
         set_tray_state(&app, TrayState::Downloading);
         let loaded = model::ensure_model(&cfg.model)
-            .and_then(|path| transcribe::Engine::load(&path.to_string_lossy(), &cfg));
+            .and_then(|path| engine::Engine::load(&path.to_string_lossy(), &cfg));
+        let mut engine_slot = state.engine.lock().unwrap();
+        let current = state.current_model.lock().unwrap();
+        if state.model_generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
         match loaded {
             Ok(engine) => {
-                *state.engine.lock().unwrap() = Some(engine);
+                *engine_slot = Some(engine);
+                *state.active_model.lock().unwrap() = cfg.model.clone();
+                *state.cfg.lock().unwrap() = cfg.clone();
+                state.engine_ready.store(true, Ordering::SeqCst);
                 log::info!("engine ready (model: {})", cfg.model);
                 set_tray_state(&app, TrayState::Idle);
             }
@@ -1243,6 +1312,8 @@ fn load_engine_async(app: AppHandle) {
                 set_tray_state(&app, TrayState::Error);
             }
         }
+        drop(current);
+        drop(engine_slot);
         // Update the menu/window now that the engine state has settled.
         refresh_menu(&app);
     });
@@ -1251,20 +1322,30 @@ fn load_engine_async(app: AppHandle) {
 /// Force-reload the transcription engine from the current config, keeping the
 /// existing engine until the new one is ready. Picks up model and
 /// transcription-setting changes (language, vocabulary, punctuation, etc.).
-fn reload_engine(app: AppHandle, model: String) {
+fn reload_engine(app: AppHandle, cfg: config::Config, generation: u64) {
+    let model = cfg.model.clone();
     std::thread::spawn(move || {
         set_tray_state(&app, TrayState::Downloading);
-        let cfg = config::Config::load();
         let loaded = model::ensure_model(&model)
-            .and_then(|path| transcribe::Engine::load(&path.to_string_lossy(), &cfg));
+            .and_then(|path| engine::Engine::load(&path.to_string_lossy(), &cfg));
         let state = app.state::<AppState>();
+        let mut engine_slot = state.engine.lock().unwrap();
+        let current = state.current_model.lock().unwrap();
+        if state.model_generation.load(Ordering::SeqCst) != generation {
+            return;
+        }
         match loaded {
             Ok(engine) => {
-                *state.engine.lock().unwrap() = Some(engine);
+                *engine_slot = Some(engine);
+                *state.active_model.lock().unwrap() = cfg.model.clone();
+                *state.cfg.lock().unwrap() = cfg.clone();
+                state.engine_ready.store(true, Ordering::SeqCst);
                 log::info!("engine reloaded (model: {model})");
             }
             Err(e) => log::error!("engine reload failed, keeping current engine: {e}"),
         }
+        drop(current);
+        drop(engine_slot);
         set_tray_state(&app, TrayState::Idle);
     });
 }
@@ -1285,18 +1366,25 @@ fn reload_config(app: &AppHandle) {
 
     // Swap in the new config (covers hotkey_mode and any future fields).
     let model = fresh.model.clone();
-    *state.cfg.lock().unwrap() = fresh;
-    *state.current_model.lock().unwrap() = model.clone();
+    *state.cfg.lock().unwrap() = fresh.clone();
+    let generation = {
+        let mut current = state.current_model.lock().unwrap();
+        *current = model;
+        state.model_generation.fetch_add(1, Ordering::SeqCst) + 1
+    };
 
     refresh_menu(app);
     log::info!("config reloaded");
 
     // Always reload the engine so language/vocabulary/punctuation edits apply
     // even when the model name is unchanged.
-    reload_engine(app.clone(), model);
+    reload_engine(app.clone(), fresh, generation);
 }
 
 fn main() {
+    if self_test::run_if_requested() {
+        return;
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let cfg = config::Config::load();
     log::info!(
@@ -1311,7 +1399,7 @@ fn main() {
     let startup_shortcuts: Vec<Shortcut> = cfg
         .shortcuts
         .iter()
-        .filter(|a| *a != FN_HOTKEY)
+        .filter(|a| bare_modifier_flag(a).is_none())
         .filter_map(|a| match a.parse::<Shortcut>() {
             Ok(sc) => Some(sc),
             Err(e) => {
@@ -1320,7 +1408,11 @@ fn main() {
             }
         })
         .collect();
-    let fn_default = cfg.shortcuts.iter().any(|a| a == FN_HOTKEY);
+    let startup_watched: u64 = cfg
+        .shortcuts
+        .iter()
+        .filter_map(|a| bare_modifier_flag(a))
+        .fold(0, |acc, f| acc | f);
 
     // Surface panics in the log — an unwind across a system callback aborts
     // the process with no crash report otherwise.
@@ -1357,10 +1449,14 @@ fn main() {
             recorder: audio::Recorder::spawn(),
             engine: Arc::new(Mutex::new(None)),
             recording: AtomicBool::new(false),
+            engine_ready: AtomicBool::new(false),
+            model_generation: AtomicU64::new(0),
+            processing: AtomicBool::new(false),
             shortcuts: Mutex::new(cfg.shortcuts.clone()),
-            fn_hotkey: AtomicBool::new(fn_default),
+            watched_flags: AtomicU64::new(startup_watched),
             pending_replace: Mutex::new(None),
             current_model: Mutex::new(cfg.model.clone()),
+            active_model: Mutex::new(cfg.model.clone()),
             cfg: Mutex::new(cfg),
             history_items: Mutex::new(Vec::new()),
         })

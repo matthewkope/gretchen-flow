@@ -35,7 +35,8 @@ window.addEventListener("keydown", (e) => {
   if (e.shiftKey) mods.push("Shift");
   const key = keyName(e);
   if (!key) {
-    // Modifier-only so far — show progress.
+    // Modifier-only so far — show progress. Releasing it alone (keyup
+    // handler below) offers the bare modifier itself as the hotkey.
     combo.textContent = mods.length
       ? mods.map((m) => SYMBOLS[m]).join("") + " …" : "…";
     save.disabled = true; accel = null;
@@ -50,6 +51,25 @@ window.addEventListener("keydown", (e) => {
   if (!mods.length && !/^F\d+$/.test(key)) {
     note.textContent = `“${key}” will be a dedicated hotkey — it won’t type normally while set`;
   }
+});
+
+// A modifier pressed and released on its own (no other key, no other
+// modifiers still held) becomes a bare-modifier hotkey — like Fn, it's
+// watched by a low-level listener, so ⌃/⌘/⌥/⇧ alone work as push-to-talk.
+const MOD_CODES = {
+  ControlLeft: "Ctrl", ControlRight: "Ctrl",
+  MetaLeft: "Cmd", MetaRight: "Cmd",
+  AltLeft: "Alt", AltRight: "Alt",
+  ShiftLeft: "Shift", ShiftRight: "Shift",
+};
+window.addEventListener("keyup", (e) => {
+  const mod = MOD_CODES[e.code];
+  if (!mod || accel) return; // not a modifier, or a combo was already captured
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return; // others still held
+  accel = mod;
+  combo.textContent = SYMBOLS[mod];
+  save.disabled = false;
+  note.textContent = `${SYMBOLS[mod]} held alone will be push-to-talk — combos using it still work normally`;
 });
 
 save.onclick = () => {

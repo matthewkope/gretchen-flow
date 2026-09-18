@@ -1,0 +1,35 @@
+{
+  "parakeet": {
+    "wer_delta_percentage_points": -0.5747126436781609,
+    "paired_clip_bootstrap_95_interval": [
+      -2.292334069237634,
+      0.5865102639296188
+    ],
+    "better_clips": 2,
+    "worse_clips": 1,
+    "equal_clips": 21,
+    "unique_clips": 24
+  },
+  "moonshine": {
+    "wer_delta_percentage_points": 1.7241379310344827,
+    "paired_clip_bootstrap_95_interval": [
+      -1.3888888888888888,
+      5.704697986577181
+    ],
+    "better_clips": 3,
+    "worse_clips": 6,
+    "equal_clips": 15,
+    "unique_clips": 24
+  },
+  "moonshine-stream": {
+    "wer_delta_percentage_points": 1.1494252873563218,
+    "paired_clip_bootstrap_95_interval": [
+      -1.881720430107527,
+      4.733769016498821
+    ],
+    "better_clips": 3,
+    "worse_clips": 4,
+    "equal_clips": 17,
+    "unique_clips": 24
+  }
+}

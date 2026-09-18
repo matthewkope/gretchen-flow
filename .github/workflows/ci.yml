@@ -7,29 +7,31 @@ on:
 
 jobs:
   desktop:
-    # Pinned to macos-14 (matches release.yml): macos-latest (macos-15) trips a
-    # whisper.cpp i8mm intrinsic build error in whisper-rs-sys.
-    runs-on: macos-14
+    runs-on: macos-15
     defaults:
       run:
         working-directory: desktop/src-tauri
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Select Swift 6.2 toolchain
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: desktop/src-tauri
+      - name: Build Parakeet runtime
+        run: ../scripts/build-parakeet.sh
       - name: Test
-        run: cargo test
+        run: cargo test --locked --all-targets
       - name: Lint
         run: cargo clippy -- -D warnings
       - name: Format
         run: cargo fmt --check
 
   python:
-    runs-on: macos-14
+    runs-on: macos-15
     defaults:
       run:
         working-directory: python

@@ -21,3 +21,9 @@ build/
 # Rust / Tauri
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
+
+# Native Parakeet worker build products
+desktop/parakeet/.build/
+desktop/parakeet/.swiftpm/
+desktop/parakeet/staging/
+tools/asr-bench/swift/.build/

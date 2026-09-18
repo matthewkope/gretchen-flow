@@ -1,0 +1,324 @@
+{
+  "moonshine-stream": {
+    "clips": 24,
+    "warm_runs": 24,
+    "passes": 1,
+    "word_errors": 19,
+    "reference_words": 345,
+    "wer_percent": 5.507246376811594,
+    "normalized_word_errors": 15,
+    "normalized_reference_words": 348,
+    "normalized_wer_percent": 4.310344827586207,
+    "p50_ms": 146.91456247703184,
+    "p95_ms": 326.00744196586356,
+    "cold_first_call_ms": 187.33287503710017,
+    "load_seconds": 0.10600400000112131,
+    "latency_kind": "simulated release to final",
+    "transcript_variants": 0,
+    "errors": [
+      {
+        "id": "1272-128104-0000",
+        "reference": "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL",
+        "hypothesis": "Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+        "distance": 1
+      },
+      {
+        "id": "1272-128104-0006",
+        "reference": "ON THE GENERAL PRINCIPLES OF ART MISTER QUILTER WRITES WITH EQUAL LUCIDITY",
+        "hypothesis": "On the general principles of art, Mr. Quilter writes with equal lucidity.",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0000",
+        "reference": "BECAUSE YOU WERE SLEEPING INSTEAD OF CONQUERING THE LOVELY ROSE PRINCESS HAS BECOME A FIDDLE WITHOUT A BOW WHILE POOR SHAGGY SITS THERE A COOING DOVE",
+        "hypothesis": "Because you are sleeping instead of conquering, The lovely rose princess has become a fiddle without a bow. All poor a shaggy sits there, a cooing dove.",
+        "distance": 3
+      },
+      {
+        "id": "1272-135031-0010",
+        "reference": "IN FACT THERE IS NOTHING HE CAN DO IN THESE DOMINIONS AS WELL AS OUR NOMES WHOSE NUMBERS ARE SO GREAT THAT IT WORRIES US TO KEEP THEM ALL BUSY",
+        "hypothesis": "In fact, there is nothing he can do in these dominions as well as our gnomes. Whose numbers are so great that it worries us to keep them all busy?",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0016",
+        "reference": "KALIKO HESITATED",
+        "hypothesis": "Calico hesitated.",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0022",
+        "reference": "TRUE AGREED KALIKO",
+        "hypothesis": "True. Agreed Calico.",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0003",
+        "reference": "HIS INSTANT OF PANIC WAS FOLLOWED BY A SMALL SHARP BLOW HIGH ON HIS CHEST",
+        "hypothesis": "His instinctive panic was followed by a small sharp blow high on his chest.",
+        "distance": 2
+      },
+      {
+        "id": "1272-141231-0006",
+        "reference": "THE BUZZER'S WHIRR TRIGGERED HIS MUSCLES INTO COMPLETE RELAXATION",
+        "hypothesis": "The buzzers were triggered his muscles into complete relaxation.",
+        "distance": 2
+      },
+      {
+        "id": "1272-141231-0013",
+        "reference": "THE TWENTIES",
+        "hypothesis": "The 20s",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0016",
+        "reference": "TEN SECONDS",
+        "hypothesis": "10 seconds",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0028",
+        "reference": "IROLG LOOKED AMAZED AT THE SUDDEN FURY OF THE ATTACK THEN SMILED",
+        "hypothesis": "I rolled, looked amazed at the sudden fury of the attack. Then smiled.",
+        "distance": 2
+      },
+      {
+        "id": "1272-141231-0032",
+        "reference": "THEN THE POWERFUL TWIST THAT THRUST IT ASIDE IN AND UNDER THE GUARD",
+        "hypothesis": "Then the powerful twist that's rested aside. In and under the guard,",
+        "distance": 3
+      }
+    ]
+  },
+  "moonshine": {
+    "clips": 24,
+    "warm_runs": 72,
+    "passes": 3,
+    "word_errors": 62,
+    "reference_words": 1035,
+    "wer_percent": 5.990338164251208,
+    "normalized_word_errors": 53,
+    "normalized_reference_words": 1044,
+    "normalized_wer_percent": 5.076628352490421,
+    "p50_ms": 382.8695204865653,
+    "p95_ms": 1190.3622350364458,
+    "cold_first_call_ms": 487.19850002089515,
+    "load_seconds": 0.5808620410389267,
+    "latency_kind": "batch engine call",
+    "transcript_variants": 3,
+    "errors": [
+      {
+        "id": "1272-128104-0006",
+        "reference": "ON THE GENERAL PRINCIPLES OF ART MISTER QUILTER WRITES WITH EQUAL LUCIDITY",
+        "hypothesis": "On the general principles of art, Mr. Quilter writes with equal lucidity.",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0000",
+        "reference": "BECAUSE YOU WERE SLEEPING INSTEAD OF CONQUERING THE LOVELY ROSE PRINCESS HAS BECOME A FIDDLE WITHOUT A BOW WHILE POOR SHAGGY SITS THERE A COOING DOVE",
+        "hypothesis": "Because you were sleeping instead of conquering, The lovely rose princess has become a fiddle without a bow. All poor a shaggy sits there, a cooing dove.",
+        "distance": 2
+      },
+      {
+        "id": "1272-135031-0010",
+        "reference": "IN FACT THERE IS NOTHING HE CAN DO IN THESE DOMINIONS AS WELL AS OUR NOMES WHOSE NUMBERS ARE SO GREAT THAT IT WORRIES US TO KEEP THEM ALL BUSY",
+        "hypothesis": "In fact, there is nothing he can do in these dominions as well as our gnomes. Whose numbers are so great that it worries us to keep them all busy?",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0016",
+        "reference": "KALIKO HESITATED",
+        "hypothesis": "Calico hesitated.",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0022",
+        "reference": "TRUE AGREED KALIKO",
+        "hypothesis": "True. Agreed calico.",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0000",
+        "reference": "A MAN SAID TO THE UNIVERSE SIR I EXIST",
+        "hypothesis": "Yeah. A man said to the universe. Sir, I exist.",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0003",
+        "reference": "HIS INSTANT OF PANIC WAS FOLLOWED BY A SMALL SHARP BLOW HIGH ON HIS CHEST",
+        "hypothesis": "His instinctive panic was followed by a small sharp blow high on his chest.",
+        "distance": 2
+      },
+      {
+        "id": "1272-141231-0006",
+        "reference": "THE BUZZER'S WHIRR TRIGGERED HIS MUSCLES INTO COMPLETE RELAXATION",
+        "hypothesis": "The buzzers were triggered his muscles into complete relaxation.",
+        "distance": 2
+      },
+      {
+        "id": "1272-141231-0013",
+        "reference": "THE TWENTIES",
+        "hypothesis": "The 20s",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0016",
+        "reference": "TEN SECONDS",
+        "hypothesis": "Yeah 10 seconds",
+        "distance": 2
+      },
+      {
+        "id": "1272-141231-0028",
+        "reference": "IROLG LOOKED AMAZED AT THE SUDDEN FURY OF THE ATTACK THEN SMILED",
+        "hypothesis": "I rolled, looked amazed at the sudden fury of the attack. Then smiled.",
+        "distance": 2
+      },
+      {
+        "id": "1272-141231-0032",
+        "reference": "THEN THE POWERFUL TWIST THAT THRUST IT ASIDE IN AND UNDER THE GUARD",
+        "hypothesis": "And then the powerful twist that's rested aside. In and under the guard,",
+        "distance": 4
+      }
+    ]
+  },
+  "parakeet": {
+    "clips": 24,
+    "warm_runs": 72,
+    "passes": 3,
+    "word_errors": 27,
+    "reference_words": 1035,
+    "wer_percent": 2.608695652173913,
+    "normalized_word_errors": 27,
+    "normalized_reference_words": 1044,
+    "normalized_wer_percent": 2.586206896551724,
+    "p50_ms": 56.844583500000006,
+    "p95_ms": 65.0628997,
+    "cold_first_call_ms": 79.724167,
+    "load_seconds": 33.333018667,
+    "latency_kind": "batch engine call",
+    "transcript_variants": 0,
+    "errors": [
+      {
+        "id": "1272-128104-0009",
+        "reference": "HE LAMENTS MOST BITTERLY THE DIVORCE THAT HAS BEEN MADE BETWEEN DECORATIVE ART AND WHAT WE USUALLY CALL PICTURES MAKES THE CUSTOMARY APPEAL TO THE LAST JUDGMENT AND REMINDS US THAT IN THE GREAT DAYS OF ART MICHAEL ANGELO WAS THE FURNISHING UPHOLSTERER",
+        "hypothesis": "He laments most bitterly the divorce that has been made between decorative art and what we usually call pictures, makes a customary appeal to the Last Judgment, and reminds us that in the great days of art Michelangelo was the furnishing upholsterer",
+        "distance": 3
+      },
+      {
+        "id": "1272-135031-0000",
+        "reference": "BECAUSE YOU WERE SLEEPING INSTEAD OF CONQUERING THE LOVELY ROSE PRINCESS HAS BECOME A FIDDLE WITHOUT A BOW WHILE POOR SHAGGY SITS THERE A COOING DOVE",
+        "hypothesis": "Because you are sleeping instead of conquering, the lovely Rose Princess has become a fiddle without a bow, while poor Shaggy sits there a cooing dove.",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0010",
+        "reference": "IN FACT THERE IS NOTHING HE CAN DO IN THESE DOMINIONS AS WELL AS OUR NOMES WHOSE NUMBERS ARE SO GREAT THAT IT WORRIES US TO KEEP THEM ALL BUSY",
+        "hypothesis": "In fact, there is nothing he can do in these dominions as well as our gnomes, whose numbers are so great that it worries us to keep them all busy.",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0016",
+        "reference": "KALIKO HESITATED",
+        "hypothesis": "Callago hesitated.",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0022",
+        "reference": "TRUE AGREED KALIKO",
+        "hypothesis": "True, agreed Calico",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0003",
+        "reference": "HIS INSTANT OF PANIC WAS FOLLOWED BY A SMALL SHARP BLOW HIGH ON HIS CHEST",
+        "hypothesis": "His instant panic was followed by a small, sharp blow high on his chest.",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0028",
+        "reference": "IROLG LOOKED AMAZED AT THE SUDDEN FURY OF THE ATTACK THEN SMILED",
+        "hypothesis": "Irol looked amazed at the sudden fury of the attack, then smiled.",
+        "distance": 1
+      }
+    ]
+  },
+  "whisper": {
+    "clips": 24,
+    "warm_runs": 72,
+    "passes": 3,
+    "word_errors": 48,
+    "reference_words": 1035,
+    "wer_percent": 4.63768115942029,
+    "normalized_word_errors": 33,
+    "normalized_reference_words": 1044,
+    "normalized_wer_percent": 3.1609195402298855,
+    "p50_ms": 1408.5134369999998,
+    "p95_ms": 2019.6235751500003,
+    "cold_first_call_ms": 2965.096416,
+    "load_seconds": 0.6665445,
+    "latency_kind": "batch engine call",
+    "transcript_variants": 0,
+    "errors": [
+      {
+        "id": "1272-128104-0000",
+        "reference": "MISTER QUILTER IS THE APOSTLE OF THE MIDDLE CLASSES AND WE ARE GLAD TO WELCOME HIS GOSPEL",
+        "hypothesis": "Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+        "distance": 1
+      },
+      {
+        "id": "1272-128104-0006",
+        "reference": "ON THE GENERAL PRINCIPLES OF ART MISTER QUILTER WRITES WITH EQUAL LUCIDITY",
+        "hypothesis": "On the general principles of art, Mr. Quilter writes with equal lucidity:",
+        "distance": 1
+      },
+      {
+        "id": "1272-128104-0009",
+        "reference": "HE LAMENTS MOST BITTERLY THE DIVORCE THAT HAS BEEN MADE BETWEEN DECORATIVE ART AND WHAT WE USUALLY CALL PICTURES MAKES THE CUSTOMARY APPEAL TO THE LAST JUDGMENT AND REMINDS US THAT IN THE GREAT DAYS OF ART MICHAEL ANGELO WAS THE FURNISHING UPHOLSTERER",
+        "hypothesis": "He laments most bitterly the divorce that has been made between decorative art and what we usually call pictures, makes a customary appeal to the Last Judgment, and reminds us that in the great days of art Michelangelo was the furnishing upholsterer.",
+        "distance": 3
+      },
+      {
+        "id": "1272-135031-0010",
+        "reference": "IN FACT THERE IS NOTHING HE CAN DO IN THESE DOMINIONS AS WELL AS OUR NOMES WHOSE NUMBERS ARE SO GREAT THAT IT WORRIES US TO KEEP THEM ALL BUSY",
+        "hypothesis": "In fact, there's nothing he can do in these dominions as well as our gnomes, whose numbers are so great that it worries us to keep them all busy.",
+        "distance": 3
+      },
+      {
+        "id": "1272-135031-0013",
+        "reference": "INQUIRED SHAGGY IN THE METAL FOREST",
+        "hypothesis": "He inquired Shaggy in the metal forest.",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0016",
+        "reference": "KALIKO HESITATED",
+        "hypothesis": "Calico hesitated.",
+        "distance": 1
+      },
+      {
+        "id": "1272-135031-0022",
+        "reference": "TRUE AGREED KALIKO",
+        "hypothesis": "\"True,\" agreed Calico.",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0003",
+        "reference": "HIS INSTANT OF PANIC WAS FOLLOWED BY A SMALL SHARP BLOW HIGH ON HIS CHEST",
+        "hypothesis": "His instant panic was followed by a small sharp blow high on his chest.",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0016",
+        "reference": "TEN SECONDS",
+        "hypothesis": "10 Seconds.",
+        "distance": 1
+      },
+      {
+        "id": "1272-141231-0028",
+        "reference": "IROLG LOOKED AMAZED AT THE SUDDEN FURY OF THE ATTACK THEN SMILED",
+        "hypothesis": "I roll-clicked amazed at the sudden fury of the attack, then smiled.",
+        "distance": 3
+      }
+    ]
+  }
+}

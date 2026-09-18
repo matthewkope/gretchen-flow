@@ -1,0 +1,17 @@
+{
+  "productName": "Gretchen Flow Test",
+  "version": "0.3.0-beta.1",
+  "identifier": "com.matthewkope.gretchenflow.test",
+  "bundle": {
+    "targets": [
+      "app"
+    ],
+    "resources": {
+      "../parakeet/staging/": "parakeet/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "signingIdentity": "-"
+    }
+  }
+}

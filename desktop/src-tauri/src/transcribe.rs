@@ -51,6 +51,10 @@ impl Engine {
 
     /// Transcribe 16 kHz mono f32 PCM.
     pub fn transcribe(&self, samples: &[f32]) -> Result<String, String> {
+        recover_transcription(|| self.transcribe_inner(samples))
+    }
+
+    fn transcribe_inner(&self, samples: &[f32]) -> Result<String, String> {
         let mut state = self.ctx.create_state().map_err(|e| e.to_string())?;
         let mut params = FullParams::new(SamplingStrategy::BeamSearch {
             beam_size: 5,
@@ -70,7 +74,12 @@ impl Engine {
         state.full(params, samples).map_err(|e| e.to_string())?;
 
         let n = state.full_n_segments().map_err(|e| e.to_string())?;
-        let english = self.language.as_deref() == Some("en");
+        let english = self.language.as_deref().or_else(|| {
+            state
+                .full_lang_id_from_state()
+                .ok()
+                .and_then(whisper_rs::get_lang_str)
+        }) == Some("en");
 
         if self.pause_ms == 0 {
             let mut text = String::new();
@@ -117,6 +126,14 @@ impl Engine {
             self.auto_lists,
         ))
     }
+}
+
+/// Catch Rust inference/formatting panics before they unwind through the caller's
+/// engine mutex. The caller receives an error and still completes the session.
+/// Native aborts cannot be recovered this way.
+fn recover_transcription(f: impl FnOnce() -> Result<String, String>) -> Result<String, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
+        .unwrap_or_else(|_| Err("transcription panicked; please retry".into()))
 }
 
 /// Join tokens into text, turning speech pauses into sentence breaks.
@@ -166,15 +183,15 @@ fn build_text(
 
 /// Shared cleanup: filler removal, English "i" fix, list formatting,
 /// terminal punctuation.
-fn post_process(text: &str, english: bool, fillers: bool, lists: bool) -> String {
+pub(crate) fn post_process(text: &str, english: bool, fillers: bool, lists: bool) -> String {
     let mut result = text.trim().to_string();
-    if fillers {
+    if fillers && english {
         result = remove_filler_words(&result);
     }
     if english {
         result = fix_standalone_i(&result);
     }
-    if lists {
+    if lists && english {
         result = crate::lists::format_lists(&result);
     }
     if result.chars().last().is_some_and(|c| c.is_alphanumeric()) {
@@ -195,12 +212,11 @@ fn remove_filler_words(text: &str) -> String {
     let mut capitalize = false;
 
     for raw in text.split_whitespace() {
-        let core: String = raw
-            .chars()
-            .filter(|c| c.is_alphabetic())
-            .collect::<String>()
-            .to_lowercase();
-        if FILLERS.contains(&core.as_str()) {
+        // Strip only surrounding speech punctuation. Internal hyphens, digits,
+        // quotes and identifier characters must not turn real words into fillers.
+        let core = raw.trim_matches([',', '.', '!', '?', ';', ':']);
+        let acronym = core.len() > 1 && core.chars().all(|c| c.is_ascii_uppercase());
+        if !acronym && FILLERS.contains(&core.to_ascii_lowercase().as_str()) {
             if words.last().is_none_or(|w| w.ends_with(['.', '!', '?'])) {
                 capitalize = true;
             }
@@ -243,10 +259,12 @@ fn capitalize_first_alpha(text: &str, capitalize: &mut bool) -> String {
 fn fix_standalone_i(text: &str) -> String {
     text.split(' ')
         .map(|word| {
-            let rest = &word[word.len().min(1)..];
+            let Some(rest) = word.strip_prefix('i') else {
+                return word.to_string();
+            };
             let standalone =
                 rest.is_empty() || rest.starts_with(['\'', '’', ',', '.', '!', '?', ';', ':']);
-            if word.starts_with('i') && standalone {
+            if standalone {
                 format!("I{rest}")
             } else {
                 word.to_string()
@@ -372,6 +390,56 @@ mod tests {
     fn words_starting_with_i_untouched() {
         assert_eq!(fix_standalone_i("it is icy"), "it is icy");
         assert_eq!(fix_standalone_i("i, i. i"), "I, I. I");
+    }
+
+    #[test]
+    fn unicode_words_survive_english_cleanup() {
+        for text in [
+            "éclair",
+            "你好",
+            "🙂 hello",
+            "i like éclairs",
+            "“hello” i’m here",
+        ] {
+            assert!(!fix_standalone_i(text).is_empty());
+        }
+        assert_eq!(
+            fix_standalone_i("éclair 你好 🙂 i’m here"),
+            "éclair 你好 🙂 I’m here"
+        );
+    }
+
+    #[test]
+    fn acronyms_identifiers_and_quoted_fillers_are_preserved() {
+        let text = "Set ER to 5. Use U-H and uh_2. Say \"um\".";
+        assert_eq!(remove_filler_words(text), text);
+        assert_eq!(remove_filler_words("Um, this uh works."), "This works.");
+    }
+
+    #[test]
+    fn english_rules_do_not_delete_foreign_words() {
+        assert_eq!(
+            post_process("Er geht um acht.", false, true, true),
+            "Er geht um acht."
+        );
+        assert_eq!(
+            post_process("First, eins. Second, zwei.", false, true, true),
+            "First, eins. Second, zwei."
+        );
+    }
+
+    #[test]
+    fn panic_returns_error_without_poisoning_engine_lock() {
+        let lock = std::sync::Mutex::new(());
+        {
+            let _guard = lock.lock().unwrap();
+            assert!(recover_transcription(|| panic!("test formatting failure")).is_err());
+        }
+        let _guard = lock.lock().expect("engine mutex must remain usable");
+        assert_eq!(
+            recover_transcription(|| Ok("Next dictation.".into())).unwrap(),
+            "Next dictation."
+        );
     }
 
     #[test]

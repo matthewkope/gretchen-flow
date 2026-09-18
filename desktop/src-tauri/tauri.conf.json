@@ -1,10 +1,15 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Gretchen Flow",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "identifier": "com.matthewkope.gretchenflow",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "../ui",
+    "beforeBuildCommand": "bash scripts/build-parakeet.sh",
+    "beforeDevCommand": {
+      "script": "bash scripts/build-parakeet.sh",
+      "wait": true
+    }
   },
   "app": {
     "windows": [],
@@ -16,12 +21,21 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
-    "icon": ["icons/icon.png", "icons/icon.icns"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.icns"
+    ],
     "macOS": {
-      "minimumSystemVersion": "12.0",
+      "minimumSystemVersion": "14.0",
       "signingIdentity": "-",
       "entitlements": "entitlements.plist"
+    },
+    "resources": {
+      "../parakeet/staging/": "parakeet/"
     }
   }
 }

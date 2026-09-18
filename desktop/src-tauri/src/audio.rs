@@ -66,13 +66,19 @@ impl Recorder {
         let _ = self.tx.send(Cmd::Start);
     }
 
-    pub fn stop(&self) -> Recording {
+    pub fn stop_async(&self) -> mpsc::Receiver<Recording> {
         let (reply_tx, reply_rx) = mpsc::channel();
         let _ = self.tx.send(Cmd::Stop(reply_tx));
-        reply_rx.recv().unwrap_or(Recording {
-            samples: Vec::new(),
-            sample_rate: 16_000,
-        })
+        reply_rx
+    }
+
+    pub fn stop(&self) -> Recording {
+        self.stop_async()
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap_or(Recording {
+                samples: Vec::new(),
+                sample_rate: 16_000,
+            })
     }
 }
 
