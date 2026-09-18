@@ -24,8 +24,10 @@ pub fn run_if_requested() -> bool {
                 return Err("invalid f32 PCM".into());
             }
             let samples: Vec<f32> = bytes
-                .chunks_exact(4)
-                .map(|x| f32::from_le_bytes(x.try_into().unwrap()))
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|x| f32::from_le_bytes(*x))
                 .collect();
             let start = std::time::Instant::now();
             let text = engine.transcribe(&samples)?;
