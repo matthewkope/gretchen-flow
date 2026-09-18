@@ -1,0 +1,3 @@
+[env]
+# whisper-rs-sys forwards CMAKE_* settings to its bundled whisper.cpp build.
+CMAKE_PROJECT_INCLUDE = { value = "desktop/cmake/apple-silicon.cmake", relative = true }
